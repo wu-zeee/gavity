@@ -1,0 +1,221 @@
+<script setup lang="ts">
+import type { AgendaItem, VoteResult } from '#shared/utils/mettings';
+import { AgendaItemStatusMap, MeetingStatusMap, VoteMethodMap } from '#shared/utils/mettings';
+
+const toast = useToast();
+
+const meeting = computed(() => meetingState.meeting);
+const currentItem = computed(() => meeting.value.agenda.find(a => a.id === meeting.value.currentAgendaId) ?? null);
+const stack = computed(() => activeMotions(meeting.value));
+const top = computed(() => stack.value[stack.value.length - 1] ?? null);
+const laidAside = computed(() => laidAsideMotions(meeting.value));
+const agendaOpen = ref(true);
+
+const itemStatusMeta: Record<number, { label: string, icon: string, class: string }> = {
+  [AgendaItemStatusMap.PENDING]: { label: '待讨论', icon: 'i-lucide-circle', class: 'text-dimmed' },
+  [AgendaItemStatusMap.DISCUSSING]: { label: '讨论中', icon: 'i-lucide-message-circle', class: 'text-primary' },
+  [AgendaItemStatusMap.PASSED]: { label: '已通过', icon: 'i-lucide-check-circle-2', class: 'text-success' },
+  [AgendaItemStatusMap.REJECTED]: { label: '已否决', icon: 'i-lucide-x-circle', class: 'text-error' },
+};
+
+const canSwitch = computed(() => canSwitchAgenda(meeting.value, meetingState.currentUserId).ok);
+
+const summary = computed(() => {
+  const m = meeting.value;
+  return {
+    motions: m.motions.length,
+    votes: m.votes.length,
+    passed: m.votes.filter((v: VoteResult) => v.passed).length,
+    rejected: m.votes.filter((v: VoteResult) => !v.passed).length,
+    agendaPassed: m.agenda.filter((a: AgendaItem) => a.status === AgendaItemStatusMap.PASSED).length,
+    duration: m.startedAt ? Math.round((Date.now() - m.startedAt) / 60000) : 0,
+  };
+});
+
+function run(result: string | null): void {
+  if (result)
+    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
+}
+
+function onSwitch(itemId: number): void {
+  if (!canSwitch.value)
+    return;
+  run(switchAgenda(itemId));
+}
+
+function voteCountDisplay(vote: VoteResult): string {
+  if (vote.method === VoteMethodMap.SIGNED_BALLOT) {
+    return `赞成 ${vote.yea.length} / 反对 ${vote.nay.length} / 弃权 ${vote.abstain.length}`;
+  }
+  if (vote.method === VoteMethodMap.SECRET_BALLOT) {
+    return `赞成 ${vote.yea} / 反对 ${vote.nay} / 弃权 ${vote.abstain}`;
+  }
+  return '';
+}
+</script>
+
+<template>
+  <div class="flex h-full flex-col gap-4 overflow-y-auto p-4">
+    <!-- 会议结束：纪要摘要 -->
+    <div v-if="meeting.status === MeetingStatusMap.ENDED" class="rounded-xl border border-default bg-elevated p-5">
+      <div class="flex items-center gap-2 text-lg font-semibold text-highlighted">
+        <UIcon name="i-lucide-scroll-text" class="size-5" />
+        会议纪要
+      </div>
+      <p class="mt-1 text-sm text-muted">
+        「{{ meeting.profile.title }}」已结束。
+      </p>
+      <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-lg bg-muted p-3 text-center">
+          <div class="text-2xl font-bold text-highlighted">
+            {{ summary.motions }}
+          </div>
+          <div class="text-xs text-muted">
+            动议总数
+          </div>
+        </div>
+        <div class="rounded-lg bg-muted p-3 text-center">
+          <div class="text-2xl font-bold text-success">
+            {{ summary.passed }}
+          </div>
+          <div class="text-xs text-muted">
+            表决通过
+          </div>
+        </div>
+        <div class="rounded-lg bg-muted p-3 text-center">
+          <div class="text-2xl font-bold text-error">
+            {{ summary.rejected }}
+          </div>
+          <div class="text-xs text-muted">
+            表决否决
+          </div>
+        </div>
+        <div class="rounded-lg bg-muted p-3 text-center">
+          <div class="text-2xl font-bold text-highlighted">
+            {{ summary.agendaPassed }}/{{ meeting.agenda.length }}
+          </div>
+          <div class="text-xs text-muted">
+            议题通过
+          </div>
+        </div>
+      </div>
+      <div v-if="meeting.votes.length" class="mt-4 space-y-1.5">
+        <div class="text-xs font-medium text-muted">
+          表决记录
+        </div>
+        <div
+          v-for="vote in meeting.votes"
+          :key="vote.id"
+          class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs"
+        >
+          <UIcon :name="vote.passed ? 'i-lucide-check-circle-2' : 'i-lucide-x-circle'" class="size-3.5" :class="vote.passed ? 'text-success' : 'text-error'" />
+          <span>#V{{ vote.id }}</span>
+          <span class="text-muted">{{ vote.passed ? '通过' : '否决' }}</span>
+          <span class="ml-auto text-muted">{{ voteCountDisplay(vote) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <template v-else>
+      <!-- 当前议题 -->
+      <div class="rounded-xl border border-default bg-elevated p-4">
+        <div class="flex items-center gap-2 text-xs text-muted">
+          <UIcon name="i-lucide-list-video" class="size-3.5" />
+          当前议题
+          <template v-if="currentItem">
+            <UBadge size="sm" color="primary" variant="soft">
+              {{ itemStatusMeta[currentItem.status]?.label }}
+            </UBadge>
+          </template>
+        </div>
+        <template v-if="currentItem">
+          <h2 class="mt-1.5 text-lg font-semibold text-highlighted">
+            议题 #{{ currentItem.id }} · {{ currentItem.title }}
+          </h2>
+          <p class="mt-1 text-sm text-muted">
+            {{ currentItem.details }}
+          </p>
+        </template>
+        <p v-else class="mt-1.5 text-sm text-muted">
+          尚未选择议题，请主持在下方议程中选择。
+        </p>
+      </div>
+
+      <!-- 当前动议（叠加于议题之上） -->
+      <MotionCard v-if="top" :motion="top" :stack-below="stack.length - 1" />
+      <div
+        v-else-if="meeting.status === MeetingStatusMap.IN_PROGRESS"
+        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+      >
+        当前没有待处理动议。持有发言权的成员可提出动议。
+      </div>
+      <div
+        v-else-if="meeting.status === MeetingStatusMap.NOT_STARTED"
+        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+      >
+        会议尚未开始，请主持点击顶部「开始会议」。
+      </div>
+      <div
+        v-else-if="meeting.status === MeetingStatusMap.RECESSED"
+        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+      >
+        会议休会中，等待主持恢复。
+      </div>
+
+      <!-- 已搁置动议 -->
+      <div v-if="laidAside.length" class="rounded-xl border border-default p-3">
+        <div class="text-xs font-medium text-muted">
+          已搁置的动议（可通过「恢复议题」重新审议）
+        </div>
+        <div class="mt-2 space-y-1.5">
+          <div v-for="motion in laidAside" :key="motion.id" class="flex items-center gap-2 text-xs text-muted">
+            <UIcon name="i-lucide-pause" class="size-3.5 shrink-0" />
+            <span class="text-dimmed">#M{{ motion.id }}</span>
+            <span class="truncate">{{ motionMeta(motion.type).label }}：{{ motion.content }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 议程列表（可折叠） -->
+      <UCollapsible v-model:open="agendaOpen" class="rounded-xl border border-default">
+        <div class="flex items-center gap-2 px-4 py-2.5">
+          <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />
+          <span class="text-sm font-medium text-highlighted">议程（{{ meeting.agenda.length }}）</span>
+          <div class="flex-1" />
+          <UButton
+            :icon="agendaOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+          />
+        </div>
+        <template #content>
+          <div class="border-t border-muted px-2 py-2">
+            <button
+              v-for="(item, index) in meeting.agenda"
+              :key="item.id"
+              type="button"
+              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
+              :class="[
+                item.id === meeting.currentAgendaId ? 'bg-accented' : 'hover:bg-elevated',
+                canSwitch ? 'cursor-pointer' : 'cursor-default',
+              ]"
+              @click="onSwitch(item.id)"
+            >
+              <UIcon :name="itemStatusMeta[item.status]?.icon ?? 'i-lucide-circle'" class="size-4 shrink-0" :class="itemStatusMeta[item.status]?.class" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm" :class="item.id === meeting.currentAgendaId ? 'font-medium text-highlighted' : 'text-default'">
+                  {{ index + 1 }}. {{ item.title }}
+                </div>
+              </div>
+              <UBadge v-if="item.id === meeting.currentAgendaId" size="sm" color="primary" variant="subtle">
+                当前
+              </UBadge>
+              <span v-else class="text-xs text-dimmed">{{ itemStatusMeta[item.status]?.label }}</span>
+            </button>
+          </div>
+        </template>
+      </UCollapsible>
+    </template>
+  </div>
+</template>
