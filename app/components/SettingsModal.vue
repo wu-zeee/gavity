@@ -4,24 +4,34 @@ const toast = useToast();
 const meeting = computed(() => meetingState.meeting);
 const isHost = computed(() => meeting.value.profile.chair === meetingState.currentUserId);
 
+const open = computed({
+  get: () => uiState.settingsModalOpen,
+  set: (v: boolean) => {
+    uiState.settingsModalOpen = v;
+  },
+});
+
 const form = reactive({
   title: '',
   secondsRequired: 2,
   voteDuration: 60,
 });
 
-const newAgenda = reactive({ title: '', details: '' });
+watch(open, (v) => {
+  if (v) {
+    form.title = meeting.value.profile.title;
+    form.secondsRequired = meeting.value.secondsRequired;
+    form.voteDuration = meeting.value.voteDuration;
+  }
+});
 
-watch(
-  () => uiState.settingsModalOpen,
-  (open) => {
-    if (open) {
-      form.title = meeting.value.profile.title;
-      form.secondsRequired = meeting.value.secondsRequired;
-      form.voteDuration = meeting.value.voteDuration;
-    }
-  },
-);
+/** AI 主持助手（设计稿设置项 → 模拟器开关）。 */
+const aiAssistant = computed({
+  get: () => botState.running,
+  set: (v: boolean) => (v ? startBots() : stopBots()),
+});
+
+const canEdit = computed(() => isHost.value || meeting.value.recordMode);
 
 function save(): void {
   const err = updateSettings({ ...form });
@@ -30,97 +40,105 @@ function save(): void {
     return;
   }
   toast.add({ title: '设置已保存', color: 'success', icon: 'i-lucide-check-circle-2' });
-  uiState.settingsModalOpen = false;
+  open.value = false;
 }
-
-function addItem(): void {
-  if (!newAgenda.title.trim())
-    return;
-  const err = addAgendaItem(newAgenda.title, newAgenda.details);
-  if (err) {
-    toast.add({ title: err, color: 'error', icon: 'i-lucide-circle-alert' });
-    return;
-  }
-  newAgenda.title = '';
-  newAgenda.details = '';
-}
-
-function removeItem(id: number): void {
-  const err = removeAgendaItem(id);
-  if (err)
-    toast.add({ title: err, color: 'error', icon: 'i-lucide-circle-alert' });
-}
-
-const secondsItems = [1, 2, 3].map(n => ({ label: `${n} 人`, value: n }));
-const durationItems = [30, 60, 90, 120].map(n => ({ label: `${n} 秒`, value: n }));
 </script>
 
 <template>
-  <UModal v-model:open="uiState.settingsModalOpen" title="会议设置" description="会议基本信息与议事规则配置。" :ui="{ footer: 'justify-end', body: 'max-h-[60vh] overflow-y-auto' }">
-    <template #body>
-      <div class="space-y-4">
-        <UFormField label="会议名称">
-          <UInput v-model="form.title" :disabled="!isHost && !meeting.recordMode" class="w-full" />
-        </UFormField>
-
-        <div class="grid grid-cols-2 gap-3">
-          <UFormField label="附议人数阈值" description="动议进入讨论所需附议人数">
-            <USelect v-model="form.secondsRequired" :items="secondsItems" :disabled="!isHost && !meeting.recordMode" class="w-full" />
-          </UFormField>
-          <UFormField label="投票时限" description="超时后自动结算投票">
-            <USelect v-model="form.voteDuration" :items="durationItems" :disabled="!isHost && !meeting.recordMode" class="w-full" />
-          </UFormField>
+  <Teleport to="body">
+    <div v-if="open" class="modal-overlay" @click.self="open = false">
+      <div class="modal">
+        <div class="modal-header">
+          设置
         </div>
 
-        <USeparator label="议程管理" />
-
-        <div class="space-y-1.5">
-          <div
-            v-for="(item, index) in meeting.agenda"
-            :key="item.id"
-            class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm"
-          >
-            <span class="text-dimmed">{{ index + 1 }}.</span>
-            <span class="min-w-0 flex-1 truncate">{{ item.title }}</span>
-            <UButton
-              v-if="isHost || meeting.recordMode"
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="xs"
-              @click="removeItem(item.id)"
-            />
+        <!-- AI 主持助手（设计稿设置行 → 模拟器开关） -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">
+              AI 主持助手
+            </div>
+            <div class="settings-help">
+              自动管理发言顺序与计时（模拟其他成员附议与投票）
+            </div>
           </div>
+          <label class="switch">
+            <input v-model="aiAssistant" type="checkbox">
+            <span class="slider" />
+          </label>
         </div>
 
-        <div v-if="isHost || meeting.recordMode" class="space-y-2 rounded-lg border border-dashed border-default p-3">
-          <UInput v-model="newAgenda.title" placeholder="新议题标题" class="w-full" />
-          <div class="flex gap-2">
-            <UInput v-model="newAgenda.details" placeholder="议题说明（可选）" class="flex-1" />
-            <UButton label="添加" icon="i-lucide-plus" variant="soft" :disabled="!newAgenda.title.trim()" @click="addItem" />
+        <!-- 会议名称 -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">
+              会议名称
+            </div>
+            <div class="settings-help">
+              显示在导航栏与纪要中的会议标题
+            </div>
           </div>
+          <input v-model="form.title" type="text" class="text-input w-56" :disabled="!canEdit">
         </div>
 
-        <USeparator label="与会者" />
-
-        <div class="space-y-1.5">
-          <div
-            v-for="user in [...meeting.members, ...meeting.observers]"
-            :key="user"
-            class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm"
-          >
-            <UAvatar :alt="userName(user)" size="2xs" />
-            <span class="flex-1">{{ userName(user) }}</span>
-            <UBadge size="sm" variant="subtle" :color="meeting.profile.chair === user ? 'primary' : meeting.members.includes(user) ? 'neutral' : 'warning'">
-              {{ meeting.profile.chair === user ? '主持' : meeting.members.includes(user) ? '成员' : '观察员' }}
-            </UBadge>
+        <!-- 附议人数阈值 -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">
+              附议人数阈值
+            </div>
+            <div class="settings-help">
+              动议进入辩论所需附议人数
+            </div>
           </div>
+          <select v-model="form.secondsRequired" class="dropdown-select" :disabled="!canEdit">
+            <option :value="1">
+              1 人
+            </option>
+            <option :value="2">
+              2 人
+            </option>
+            <option :value="3">
+              3 人
+            </option>
+          </select>
+        </div>
+
+        <!-- 投票时限 -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">
+              投票时限
+            </div>
+            <div class="settings-help">
+              超时后自动按已投选票结算
+            </div>
+          </div>
+          <select v-model="form.voteDuration" class="dropdown-select" :disabled="!canEdit">
+            <option :value="30">
+              30 秒
+            </option>
+            <option :value="60">
+              60 秒
+            </option>
+            <option :value="90">
+              90 秒
+            </option>
+            <option :value="120">
+              120 秒
+            </option>
+          </select>
+        </div>
+
+        <div class="modal-footer mt-8">
+          <button type="button" class="btn btn-secondary" @click="open = false">
+            取消
+          </button>
+          <button type="button" class="btn btn-primary" :disabled="!canEdit" @click="save">
+            保存修改
+          </button>
         </div>
       </div>
-    </template>
-    <template #footer="{ close }">
-      <UButton label="取消" color="neutral" variant="outline" @click="close" />
-      <UButton label="保存设置" :disabled="!isHost && !meeting.recordMode" @click="save" />
-    </template>
-  </UModal>
+    </div>
+  </Teleport>
 </template>

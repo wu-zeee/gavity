@@ -21,11 +21,19 @@ const statItems = computed(() => {
   if (!stats.value)
     return [];
   return [
-    { label: '获得发言权', value: stats.value.floorCount, icon: 'i-lucide-mic' },
-    { label: '提出动议', value: stats.value.motionCount, icon: 'i-lucide-file-plus-2' },
-    { label: '附议', value: stats.value.secondCount, icon: 'i-lucide-thumbs-up' },
-    { label: '参与投票', value: stats.value.voteCount, icon: 'i-lucide-vote' },
+    { label: '获得发言权', value: stats.value.floorCount },
+    { label: '提出动议', value: stats.value.motionCount },
+    { label: '附议', value: stats.value.secondCount },
+    { label: '参与投票', value: stats.value.voteCount },
   ];
+});
+
+const roleLabel = computed(() => {
+  if (role.value === 'host')
+    return '主持';
+  if (role.value === 'member')
+    return '成员';
+  return '观察员';
 });
 
 function run(result: string | null): void {
@@ -33,75 +41,75 @@ function run(result: string | null): void {
     toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
     return;
   }
-  uiState.memberDetailId = null;
+  open.value = false;
 }
 </script>
 
 <template>
-  <UModal v-model:open="open" title="与会者详情" :ui="{ footer: 'justify-end' }">
-    <template #body>
-      <div v-if="userId" class="space-y-4">
-        <div class="flex items-center gap-3">
-          <UAvatar :alt="userName(userId)" size="lg" />
-          <div>
-            <div class="flex items-center gap-2 font-semibold text-highlighted">
+  <Teleport to="body">
+    <div v-if="open" class="modal-overlay" @click.self="open = false">
+      <div class="modal">
+        <div class="modal-header">
+          与会者详情
+        </div>
+
+        <div v-if="userId" class="modal-body">
+          <div class="person-card">
+            <div class="person-name">
               {{ userName(userId) }}
-              <UBadge v-if="role === 'host'" size="sm" color="primary" variant="subtle">
-                主持
-              </UBadge>
-              <UBadge v-else-if="role === 'member'" size="sm" color="neutral" variant="subtle">
-                成员
-              </UBadge>
-              <UBadge v-else size="sm" color="warning" variant="subtle">
-                观察员
-              </UBadge>
             </div>
-            <div class="mt-0.5 flex items-center gap-1 text-xs text-muted">
+            <div class="person-role">
+              {{ roleLabel }}
               <template v-if="hasFloor">
-                <UIcon name="i-lucide-mic" class="size-3.5 text-primary" />正在发言
+                · 正在发言
               </template>
               <template v-else-if="meeting.floor.includes(userId)">
-                <UIcon name="i-lucide-hand" class="size-3.5 text-warning" />正在抢夺发言权
+                · 正在抢夺发言权
               </template>
               <template v-else>
-                <span class="inline-block size-1.5 rounded-full bg-success" />在线
+                · 在线
               </template>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div v-for="item in statItems" :key="item.label" class="vote-display !mb-0 !p-4">
+              <div class="text-[13px] text-[#525252]">
+                {{ item.label }}
+              </div>
+              <div class="vote-count !text-[24px]">
+                {{ item.value }}
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-4 gap-2">
-          <div v-for="item in statItems" :key="item.label" class="rounded-lg bg-muted p-2.5 text-center">
-            <UIcon :name="item.icon" class="mx-auto size-4 text-muted" />
-            <div class="mt-1 text-lg font-bold text-highlighted">
-              {{ item.value }}
-            </div>
-            <div class="text-xs text-muted">
-              {{ item.label }}
-            </div>
+        <div class="modal-footer justify-between">
+          <div class="flex gap-3">
+            <template v-if="userId && role === 'member' && (isHost || meeting.recordMode)">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="hasFloor"
+                @click="run(assignFloor(userId))"
+              >
+                分配发言权
+              </button>
+              <button
+                v-if="meeting.profile.chair !== userId"
+                type="button"
+                class="btn btn-secondary"
+                @click="run(transferChair(userId))"
+              >
+                移交主持
+              </button>
+            </template>
           </div>
+          <button type="button" class="btn btn-secondary" @click="open = false">
+            关闭
+          </button>
         </div>
       </div>
-    </template>
-    <template #footer="{ close }">
-      <UButton label="关闭" color="neutral" variant="outline" @click="close" />
-      <template v-if="userId && role === 'member' && (isHost || meeting.recordMode)">
-        <UButton
-          label="分配发言权"
-          icon="i-lucide-mic"
-          variant="soft"
-          :disabled="hasFloor"
-          @click="run(assignFloor(userId))"
-        />
-        <UButton
-          v-if="meeting.profile.chair !== userId"
-          label="移交主持"
-          icon="i-lucide-crown"
-          variant="soft"
-          color="warning"
-          @click="run(transferChair(userId))"
-        />
-      </template>
-    </template>
-  </UModal>
+    </div>
+  </Teleport>
 </template>
