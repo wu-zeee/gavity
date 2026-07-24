@@ -5,10 +5,14 @@
     "build": "nuxt build",
     "dev": "portless",
     "dev:port": "nuxt dev --host",
+    "dev:server": "nuxt build && wrangler dev --config wrangler.local.jsonc --port 3001",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc",
     "gen-auth-schema": "auth generate --yes --config ./server/utils/auth.ts --output ./server/utils/db/schema/auth.ts"
   },
   "dependencies": {

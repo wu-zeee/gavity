@@ -5,11 +5,19 @@ import type { Meeting, Motion, VoteTreshold } from './schemas';
 import { MeetingCommand as MeetingCommandSchema } from './commands';
 import { evaluateMandate, MandateActionMap } from './mandate-policy';
 import {
+  canAssignFloor,
   canCastBallot,
+  canEndFloor,
+  canEndMeeting,
+  canGrabFloor,
   canOpenVote,
   canProposeMotion,
+  canResumeMeeting,
   canSecondMotion,
+  canStartMeeting,
+  canSwitchAgenda,
   isChair,
+  isMember,
   laidAsideMotions,
   motionMeta,
   topMotion,
@@ -140,6 +148,11 @@ export function decideMeetingCommand(
   if (command.actor.kind === ActorKindMap.SYSTEM && command.type !== 'CLOSE_VOTE')
     return reject('系统身份不能执行该会议动作');
   if (command.actor.kind === ActorKindMap.CHAIR_AGENT
+    && command.type !== 'START_MEETING'
+    && command.type !== 'END_MEETING'
+    && command.type !== 'RESUME_MEETING'
+    && command.type !== 'ASSIGN_FLOOR'
+    && command.type !== 'SWITCH_AGENDA'
     && command.type !== 'OPEN_VOTE'
     && command.type !== 'CLOSE_VOTE') {
     return reject('AI 主持人不能代表成员提出动议、附议或投票');
@@ -161,6 +174,88 @@ export function decideMeetingCommand(
   const base = eventBase(command);
 
   switch (command.type) {
+    case 'START_MEETING': {
+      const check = canStartMeeting(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      return {
+        status: 'accepted',
+        events: [{ ...base, type: 'MEETING_STARTED', payload: {} }],
+      };
+    }
+
+    case 'END_MEETING': {
+      const check = canEndMeeting(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      return {
+        status: 'accepted',
+        events: [{ ...base, type: 'MEETING_ENDED', payload: {} }],
+      };
+    }
+
+    case 'RESUME_MEETING': {
+      const check = canResumeMeeting(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      return {
+        status: 'accepted',
+        events: [{ ...base, type: 'MEETING_RESUMED', payload: {} }],
+      };
+    }
+
+    case 'GRAB_FLOOR': {
+      const check = canGrabFloor(meeting, actorSeatId, command.issuedAt);
+      if (!check.ok)
+        return reject(check.reason!);
+      return {
+        status: 'accepted',
+        events: [{ ...base, type: 'FLOOR_GRANTED', payload: { seatId: actorSeatId } }],
+      };
+    }
+
+    case 'RELEASE_FLOOR': {
+      const check = canEndFloor(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      return {
+        status: 'accepted',
+        events: [{
+          ...base,
+          type: 'FLOOR_RELEASED',
+          payload: { seatId: meeting.floorHolder!, reopenAt: command.issuedAt + 3_000 },
+        }],
+      };
+    }
+
+    case 'ASSIGN_FLOOR': {
+      const check = canAssignFloor(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      if (!isMember(meeting, command.payload.seatId))
+        return reject('只能把发言权分配给会议成员');
+      return {
+        status: 'accepted',
+        events: [{ ...base, type: 'FLOOR_GRANTED', payload: { seatId: command.payload.seatId } }],
+      };
+    }
+
+    case 'SWITCH_AGENDA': {
+      const check = canSwitchAgenda(meeting, actorSeatId);
+      if (!check.ok)
+        return reject(check.reason!);
+      if (!meeting.agenda.some(item => item.id === command.payload.agendaItemId))
+        return reject('议题不存在');
+      return {
+        status: 'accepted',
+        events: [{
+          ...base,
+          type: 'AGENDA_SWITCHED',
+          payload: { agendaItemId: command.payload.agendaItemId },
+        }],
+      };
+    }
+
     case 'PROPOSE_MOTION': {
       if (!command.payload.content.trim())
         return reject('动议内容不能为空');
@@ -305,6 +400,38 @@ export function applyMeetingEvents(meeting: Meeting, events: MeetingEvent[]): Me
   const next = structuredClone(meeting);
   for (const event of events) {
     switch (event.type) {
+      case 'MEETING_STARTED':
+        next.status = MeetingStatusMap.IN_PROGRESS;
+        next.startedAt = event.occurredAt;
+        break;
+      case 'MEETING_ENDED':
+        next.status = MeetingStatusMap.ENDED;
+        next.activeVote = null;
+        next.floor = [];
+        next.floorHolder = null;
+        for (const motion of next.motions) {
+          if (motion.status !== MotionStatusMap.DISPOSED
+            && motion.status !== MotionStatusMap.LAID_ASIDE) {
+            motion.status = MotionStatusMap.DISPOSED;
+          }
+        }
+        break;
+      case 'MEETING_RESUMED':
+        next.status = MeetingStatusMap.IN_PROGRESS;
+        break;
+      case 'FLOOR_GRANTED':
+        next.floor = [];
+        next.floorHolder = event.payload.seatId;
+        next.floorGrabAt = null;
+        break;
+      case 'FLOOR_RELEASED':
+        next.floor = [];
+        next.floorHolder = null;
+        next.floorGrabAt = event.payload.reopenAt;
+        break;
+      case 'AGENDA_SWITCHED':
+        next.currentAgendaId = event.payload.agendaItemId;
+        break;
       case 'MOTION_PROPOSED':
         next.motions.push(structuredClone(event.payload.motion));
         break;

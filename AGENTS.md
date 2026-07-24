@@ -94,13 +94,17 @@
 ```bash
 bun install
 bun dev
+bun run db:migrate:local
+bun run dev:server
 bun run lint
 bun test
+bun run db:check
 bun run build
 ```
 
 - 开发服务器通过 `https://gavity.localhost` 访问；
-- 当前仓库尚未建立完整测试基础设施；阶段二开始必须补充测试；
+- 阶段三服务端验收通过 `http://127.0.0.1:3001/?mode=server` 访问；
+- 当前已建立领域与服务端集成测试；后续阶段继续补多人实时和端到端测试；
 - 如遇 ESLint 问题，先运行 `bun run lint --fix`，无法自动修复再编辑；
 - 不通过删除测试、降低规则或静默忽略错误来让检查变绿。
 

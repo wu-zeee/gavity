@@ -32,8 +32,10 @@ export default defineNuxtConfig({
     },
 
     cloudflare: {
+      nodeCompat: true,
       wrangler: {
         name: 'gavity',
+        compatibility_flags: ['nodejs_compat'],
         d1_databases: [{
           binding: 'DB',
           database_id: process.env.GAVITY_CF_DB_ID,

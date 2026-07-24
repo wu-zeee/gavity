@@ -91,6 +91,73 @@ function applyAccepted(meeting: Meeting, command: MeetingCommand): Meeting {
   return applyMeetingEvents(meeting, decision.events);
 }
 
+describe('会议生命周期与发言权', () => {
+  test('主持开始会议后，成员可取得和释放发言权，状态可由事件完整回放', () => {
+    let state = createMeeting({
+      status: MeetingStatusMap.NOT_STARTED,
+      floorHolder: null,
+      startedAt: null,
+    });
+    state = applyAccepted(state, {
+      version: 1,
+      commandId: 'cmd-start',
+      type: 'START_MEETING',
+      meetingId: 1,
+      actor: human('u1'),
+      issuedAt: NOW,
+      payload: {},
+    });
+    expect(state).toMatchObject({
+      status: MeetingStatusMap.IN_PROGRESS,
+      startedAt: NOW,
+    });
+
+    state = applyAccepted(state, {
+      version: 1,
+      commandId: 'cmd-grab-floor',
+      type: 'GRAB_FLOOR',
+      meetingId: 1,
+      actor: human('u2'),
+      issuedAt: NOW + 1,
+      payload: {},
+    });
+    expect(state.floorHolder).toBe('u2');
+
+    state = applyAccepted(state, {
+      version: 1,
+      commandId: 'cmd-release-floor',
+      type: 'RELEASE_FLOOR',
+      meetingId: 1,
+      actor: human('u2'),
+      issuedAt: NOW + 2,
+      payload: {},
+    });
+    expect(state.floorHolder).toBeNull();
+    expect(state.floorGrabAt).toBe(NOW + 3_002);
+  });
+
+  test('非主持不能开始、结束或切换会议议题', () => {
+    const meeting = createMeeting({
+      status: MeetingStatusMap.NOT_STARTED,
+      floorHolder: null,
+      startedAt: null,
+    });
+    const start: MeetingCommand = {
+      version: 1,
+      commandId: 'cmd-invalid-start',
+      type: 'START_MEETING',
+      meetingId: 1,
+      actor: human('u2'),
+      issuedAt: NOW,
+      payload: {},
+    };
+    expect(decideMeetingCommand(meeting, start)).toMatchObject({
+      status: 'rejected',
+      reason: '仅主持可开启会议',
+    });
+  });
+});
+
 describe('主动议与附议', () => {
   test('持有发言权的成员可提出主动议，且输入状态保持不变', () => {
     const meeting = createMeeting();

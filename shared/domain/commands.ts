@@ -10,6 +10,45 @@ const CommandBase = z.object({
   issuedAt: z.int(),
 });
 
+export const StartMeetingCommand = CommandBase.extend({
+  type: z.literal('START_MEETING'),
+  payload: z.object({}),
+});
+
+export const EndMeetingCommand = CommandBase.extend({
+  type: z.literal('END_MEETING'),
+  payload: z.object({}),
+});
+
+export const ResumeMeetingCommand = CommandBase.extend({
+  type: z.literal('RESUME_MEETING'),
+  payload: z.object({}),
+});
+
+export const GrabFloorCommand = CommandBase.extend({
+  type: z.literal('GRAB_FLOOR'),
+  payload: z.object({}),
+});
+
+export const ReleaseFloorCommand = CommandBase.extend({
+  type: z.literal('RELEASE_FLOOR'),
+  payload: z.object({}),
+});
+
+export const AssignFloorCommand = CommandBase.extend({
+  type: z.literal('ASSIGN_FLOOR'),
+  payload: z.object({
+    seatId: z.string().min(1),
+  }),
+});
+
+export const SwitchAgendaCommand = CommandBase.extend({
+  type: z.literal('SWITCH_AGENDA'),
+  payload: z.object({
+    agendaItemId: z.int().positive(),
+  }),
+});
+
 export const ProposeMotionCommand = CommandBase.extend({
   type: z.literal('PROPOSE_MOTION'),
   payload: z.object({
@@ -49,6 +88,13 @@ export const CloseVoteCommand = CommandBase.extend({
 });
 
 export const MeetingCommand = z.discriminatedUnion('type', [
+  StartMeetingCommand,
+  EndMeetingCommand,
+  ResumeMeetingCommand,
+  GrabFloorCommand,
+  ReleaseFloorCommand,
+  AssignFloorCommand,
+  SwitchAgendaCommand,
   ProposeMotionCommand,
   SecondMotionCommand,
   OpenVoteCommand,

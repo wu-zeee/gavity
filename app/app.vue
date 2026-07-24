@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { zh_cn } from '@nuxt/ui/locale';
 
-onMounted(() => startBots());
+const route = useRoute();
+const serverAuthorityMode = computed(() => route.query.mode === 'server');
+
+onMounted(() => {
+  if (!serverAuthorityMode.value)
+    startBots();
+});
 onUnmounted(() => stopBots());
 
 // 投票开启时自动弹出投票弹窗（含切换身份后补投）
 watch(
   [() => meetingState.meeting.activeVote, () => meetingState.currentUserId],
   ([vote, userId]) => {
+    if (serverAuthorityMode.value)
+      return;
     if (vote && vote.ballots[userId] === undefined && isMember(meetingState.meeting, userId)) {
       uiState.voteModalOpen = true;
     }
@@ -19,7 +27,9 @@ useHead({ title: 'Gavity 会议控制台' });
 
 <template>
   <UApp :locale="zh_cn">
-    <div class="flex h-screen flex-col bg-default text-default">
+    <ServerAuthorityConsole v-if="serverAuthorityMode" />
+
+    <div v-else class="flex h-screen flex-col bg-default text-default">
       <MeetingTopBar />
 
       <UAlert

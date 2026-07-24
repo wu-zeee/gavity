@@ -17,6 +17,43 @@ const EventBase = z.object({
   occurredAt: z.int(),
 });
 
+export const MeetingStartedEvent = EventBase.extend({
+  type: z.literal('MEETING_STARTED'),
+  payload: z.object({}),
+});
+
+export const MeetingEndedEvent = EventBase.extend({
+  type: z.literal('MEETING_ENDED'),
+  payload: z.object({}),
+});
+
+export const MeetingResumedEvent = EventBase.extend({
+  type: z.literal('MEETING_RESUMED'),
+  payload: z.object({}),
+});
+
+export const FloorGrantedEvent = EventBase.extend({
+  type: z.literal('FLOOR_GRANTED'),
+  payload: z.object({
+    seatId: z.string().min(1),
+  }),
+});
+
+export const FloorReleasedEvent = EventBase.extend({
+  type: z.literal('FLOOR_RELEASED'),
+  payload: z.object({
+    seatId: z.string().min(1),
+    reopenAt: z.int(),
+  }),
+});
+
+export const AgendaSwitchedEvent = EventBase.extend({
+  type: z.literal('AGENDA_SWITCHED'),
+  payload: z.object({
+    agendaItemId: z.int().positive(),
+  }),
+});
+
 export const SignedVoteResult = z.object({
   id: z.int(),
   threshold: VoteTreshold,
@@ -73,6 +110,12 @@ export const MotionRejectedEvent = EventBase.extend({
 });
 
 export const MeetingEvent = z.discriminatedUnion('type', [
+  MeetingStartedEvent,
+  MeetingEndedEvent,
+  MeetingResumedEvent,
+  FloorGrantedEvent,
+  FloorReleasedEvent,
+  AgendaSwitchedEvent,
   MotionProposedEvent,
   MotionSecondedEvent,
   VoteOpenedEvent,
