@@ -18,9 +18,6 @@ logs
 .fleet
 .idea
 
-# Robert UI 设计稿（参考用，不入库）
-Robert UI/
-
 # Local env files
 .env
 .env.*

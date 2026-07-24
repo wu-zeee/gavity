@@ -6,7 +6,10 @@ const motion = computed(() => {
   return id != null ? meeting.value.motions.find(m => m.id === id) ?? null : null;
 });
 
-const open = computed(() => motion.value != null && meeting.value.profile.chair === meetingState.currentUserId);
+const open = computed({
+  get: () => motion.value != null && meeting.value.profile.chair === meetingState.currentUserId,
+  set: () => { /* 必须作出裁决，不允许直接关闭 */ },
+});
 
 function rule(uphold: boolean): void {
   resolveRuling(uphold);
@@ -14,42 +17,31 @@ function rule(uphold: boolean): void {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open && motion" class="modal-overlay">
-      <div class="modal">
-        <div class="modal-header">
-          主持裁决
+  <UModal v-model:open="open" title="主持裁决" description="有成员提出了需要主持当场裁决的事项。" :dismissible="false">
+    <template #body>
+      <div v-if="motion" class="space-y-3">
+        <div class="flex items-center gap-2">
+          <UBadge color="secondary" variant="subtle">
+            {{ motionMeta(motion.type).label }}
+          </UBadge>
+          <span class="text-xs text-muted">@{{ userName(motion.proposer) }} 提出</span>
         </div>
-
-        <div class="modal-body">
-          <div class="person-card">
-            <div class="person-name">
-              {{ motionMeta(motion.type).label }}
-            </div>
-            <div class="person-role">
-              @{{ userName(motion.proposer) }} 提出
-            </div>
-            <p class="mt-3 text-[14px] text-[#0a0a0a]">
-              {{ motion.content }}
-            </p>
-            <p v-if="motion.details" class="mt-1 text-[13px] text-[#525252]">
-              {{ motion.details }}
-            </p>
-          </div>
-          <p class="text-[13px]">
-            请主持裁定该事项是否成立。成立后按议事规则处理，不成立则予以驳回。
-          </p>
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="rule(false)">
-            不成立
-          </button>
-          <button type="button" class="btn btn-primary" @click="rule(true)">
-            裁决成立
-          </button>
-        </div>
+        <p class="rounded-md bg-muted px-3 py-2 text-sm text-default">
+          {{ motion.content }}
+        </p>
+        <p v-if="motion.details" class="text-xs text-muted">
+          {{ motion.details }}
+        </p>
+        <p class="text-xs text-muted">
+          请主持裁定该事项是否成立。成立后按议事规则处理，不成立则予以驳回。
+        </p>
       </div>
-    </div>
-  </Teleport>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-2">
+        <UButton label="不成立" color="neutral" variant="outline" @click="rule(false)" />
+        <UButton label="裁决成立" icon="i-lucide-gavel" color="warning" @click="rule(true)" />
+      </div>
+    </template>
+  </UModal>
 </template>
