@@ -267,6 +267,69 @@ export function endFloor(userId = meetingState.currentUserId): string | null {
   return null;
 }
 
+/** 主持将某成员移出抢夺池（对应设计稿发言队列的「移除」操作）。 */
+export function removeGrab(targetId: string, userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  const check = canAssignFloor(m, userId);
+  if (!check.ok)
+    return check.reason!;
+  const index = m.floor.indexOf(targetId);
+  if (index < 0)
+    return '该成员不在抢夺池中';
+  m.floor.splice(index, 1);
+  log(`主持将 @${userName(targetId)} 移出抢夺池`, { kind: 'floor', actor: targetId, icon: 'i-lucide-x', tone: 'warning' });
+  return null;
+}
+
+/** 主持将某成员加入抢夺池（对应设计稿发言队列的「添加至队列」操作）。 */
+export function addGrab(targetId: string, userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  const check = canAssignFloor(m, userId);
+  if (!check.ok)
+    return check.reason!;
+  if (!isMember(m, targetId))
+    return '只能添加会议成员';
+  if (m.floorHolder === targetId)
+    return '该成员正在发言';
+  if (m.floor.includes(targetId))
+    return '该成员已在抢夺池中';
+  m.floor.push(targetId);
+  log(`主持将 @${userName(targetId)} 加入抢夺池`, { kind: 'floor', actor: targetId, icon: 'i-lucide-hand' });
+  return null;
+}
+
+/** 主持将队列成员上移一位（对应设计稿队列的「调整顺序」按钮）。 */
+export function moveGrabUp(targetId: string, userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  const check = canAssignFloor(m, userId);
+  if (!check.ok)
+    return check.reason!;
+  const index = m.floor.indexOf(targetId);
+  if (index < 0)
+    return '该成员不在抢夺池中';
+  if (index === 0)
+    return '已在队列最前';
+  const [item] = m.floor.splice(index, 1);
+  m.floor.splice(index - 1, 0, item!);
+  log(`主持调整 @${userName(targetId)} 的队列顺序`, { kind: 'floor', actor: targetId, icon: 'i-lucide-arrow-up-down' });
+  return null;
+}
+
+/** 设计稿 tab 导航：切换到议员端（非主持成员身份）。 */
+export function showMemberView(): void {
+  const m = meetingState.meeting;
+  if (m.profile.chair === meetingState.currentUserId) {
+    const first = m.members.find(id => id !== m.profile.chair);
+    if (first)
+      meetingState.currentUserId = first;
+  }
+}
+
+/** 设计稿 tab 导航：切换到主持端（主持身份）。 */
+export function showModeratorView(): void {
+  meetingState.currentUserId = meetingState.meeting.profile.chair;
+}
+
 /** 释放发言权并移交抢夺池第一人，随后清空抢夺池（重新开抢）。 */
 function releaseFloor(): void {
   const m = meetingState.meeting;
@@ -357,6 +420,23 @@ export function resolveRuling(uphold: boolean, userId = meetingState.currentUser
     `主持裁决：#M${motion.id}【${motionMeta(motion.type).label}】${uphold ? '成立' : '不成立'}`,
     { kind: 'ruling', actor: userId, icon: 'i-lucide-gavel', tone: uphold ? 'warning' : 'info' },
   );
+  return null;
+}
+
+/** 主持撤销栈顶动议（对应设计稿主持端的「撤销动议」按钮）。 */
+export function withdrawMotion(userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  if (!m.recordMode && !isChair(m, userId))
+    return '仅主持可撤销动议';
+  const motion = topMotion(m);
+  if (!motion)
+    return '当前没有待处理动议';
+  if (motion.status === MotionStatusMap.VOTING)
+    return '投票进行中，无法撤销';
+  motion.status = MotionStatusMap.DISPOSED;
+  if (meetingState.pendingRulingMotionId === motion.id)
+    meetingState.pendingRulingMotionId = null;
+  log(`主持撤销了动议 #M${motion.id}【${motionMeta(motion.type).label}】`, { kind: 'motion', actor: userId, icon: 'i-lucide-undo-2', tone: 'warning' });
   return null;
 }
 

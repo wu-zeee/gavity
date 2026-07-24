@@ -9,6 +9,9 @@ import { isMember, motionMeta, topMotion } from './rules';
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
+/** 模拟器运行状态（对应设计稿主持端的「AI 辅助 / 人工」主持模式切换）。 */
+export const botState = reactive({ running: false });
+
 function botMembers(): string[] {
   const m = meetingState.meeting;
   return m.members.filter(id => id !== meetingState.currentUserId);
@@ -58,6 +61,7 @@ export function startBots(): void {
   if (timer)
     return;
   timer = setInterval(tick, 1500);
+  botState.running = true;
 }
 
 export function stopBots(): void {
@@ -65,6 +69,7 @@ export function stopBots(): void {
     clearInterval(timer);
     timer = null;
   }
+  botState.running = false;
 }
 
 /** 供调试：判断某用户是否由模拟器驱动。 */

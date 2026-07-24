@@ -20,6 +20,12 @@ export default defineNuxtConfig({
 
   ssr: false,
 
+  // Robert's Rules 设计稿（index.html）为浅色主题
+  colorMode: {
+    preference: 'light',
+    fallback: 'light',
+  },
+
   nitro: {
     preset: 'cloudflare-module',
 
