@@ -83,3 +83,19 @@
   --color-morandi-blue-900: #25303A;
   --color-morandi-blue-950: #182028;
 }
+
+/*
+ * 对比度提升：覆写 Nuxt UI 文本 token，确保 WCAG AA 达标
+ * - dimmed: #A1A1AA → #737373（2.3:1 → 4.5:1）
+ * - muted: #71717A → #525252（4.6:1 → 9:1）
+ * 保持纯灰阶（瑞士设计原则）
+ */
+:root {
+  --ui-text-dimmed: #737373;
+  --ui-text-muted: #525252;
+}
+
+.dark {
+  --ui-text-dimmed: #A3A3A3;
+  --ui-text-muted: #D4D4D4;
+}

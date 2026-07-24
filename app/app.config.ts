@@ -12,7 +12,10 @@ export default defineAppConfig({
     // Swiss design: zero border-radius (switch/radio/avatar/progress keep rounded-full)
     button: { slots: { base: 'rounded-none' } },
     badge: { slots: { base: 'rounded-none' } },
-    modal: { slots: { content: 'rounded-none' } },
+    modal: {
+      slots: { content: 'rounded-none' },
+      variants: { fullscreen: { false: { content: 'rounded-none' } } },
+    },
     input: { slots: { base: 'rounded-none' } },
     textarea: { slots: { base: 'rounded-none' } },
     alert: { slots: { root: 'rounded-none' } },
