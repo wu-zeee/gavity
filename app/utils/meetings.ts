@@ -1,3 +1,5 @@
+import type { MeetingCommand } from '#shared/domain/commands';
+import type { MeetingEvent } from '#shared/domain/events';
 import type {
   AgendaItem,
   AgendaItemStatus,
@@ -5,28 +7,24 @@ import type {
   Meeting,
   Motion,
   MotionType,
-  VoteResult,
-  VoteTreshold,
 } from '#shared/utils/mettings';
+import { toRaw } from 'vue';
+import { applyMeetingEvents, decideMeetingCommand } from '#shared/domain/meeting-machine';
+import { ActorKindMap } from '#shared/domain/schemas';
 import {
   AgendaItemStatusMap,
-  BallotMap,
   MeetingStatusMap,
   MotionStatusMap,
   MotionTypeMap,
   VoteMethodMap,
-  VoteTresholdMap,
 } from '#shared/utils/mettings';
 import {
+  activeMotions,
   canAssignFloor,
-  canCastBallot,
   canEndFloor,
   canEndMeeting,
   canGrabFloor,
-  canOpenVote,
-  canProposeMotion,
   canResumeMeeting,
-  canSecondMotion,
   canStartMeeting,
   canSwitchAgenda,
   canToggleRecordMode,
@@ -34,7 +32,6 @@ import {
   isMember,
   laidAsideMotions,
   motionMeta,
-  topMotion,
 } from './rules';
 
 export interface DemoUser {
@@ -104,6 +101,7 @@ export const meetingState = reactive({
 /** 投票截止定时器（不放入响应式状态）。 */
 let voteTimer: ReturnType<typeof setTimeout> | null = null;
 let logSeq = 0;
+let domainCommandSeq = 0;
 
 export function userName(id: string | null | undefined): string {
   if (!id)
@@ -155,6 +153,39 @@ function clearVoteTimer(): void {
     clearTimeout(voteTimer);
     voteTimer = null;
   }
+}
+
+function commandId(type: MeetingCommand['type'], issuedAt: number): string {
+  return `demo:${meetingState.meeting.id}:${type}:${issuedAt}:${++domainCommandSeq}`;
+}
+
+function humanActor(userId: string) {
+  return {
+    id: userId,
+    seatId: userId,
+    kind: ActorKindMap.HUMAN,
+    mandateId: null,
+  };
+}
+
+function systemActor() {
+  return {
+    id: 'system',
+    seatId: 'system',
+    kind: ActorKindMap.SYSTEM,
+    mandateId: null,
+  };
+}
+
+function executeDomainCommand(command: MeetingCommand): { events: MeetingEvent[] } | { error: string } {
+  const meeting = structuredClone(toRaw(meetingState.meeting)) as Meeting;
+  const decision = decideMeetingCommand(meeting, command);
+  if (decision.status === 'rejected')
+    return { error: decision.reason };
+  if (decision.status === 'requires-approval')
+    return { error: `需要真人确认：${decision.reason}` };
+  meetingState.meeting = applyMeetingEvents(meeting, decision.events);
+  return { events: decision.events };
 }
 
 // ===== 会议控制 =====
@@ -293,23 +324,27 @@ export interface MotionInput {
 
 export function proposeMotion(input: MotionInput, userId = meetingState.currentUserId): string | null {
   const m = meetingState.meeting;
-  const check = canProposeMotion(m, userId, input.type);
-  if (!check.ok)
-    return check.reason!;
+  const issuedAt = Date.now();
+  const motionId = nextMotionId();
   const meta = motionMeta(input.type);
-  const motion: Motion = {
-    id: nextMotionId(),
-    type: input.type,
-    content: input.content.trim(),
-    details: input.details.trim(),
-    status: meta.needsSecond ? MotionStatusMap.DRAFT : MotionStatusMap.PENDING,
-    proposer: userId,
-    seconders: [],
-    createdAt: Date.now(),
-    voteId: null,
-  };
-  m.motions.push(motion);
   const viaNoFloor = !meta.needsFloor && m.floorHolder !== userId;
+  const execution = executeDomainCommand({
+    version: 1,
+    commandId: commandId('PROPOSE_MOTION', issuedAt),
+    type: 'PROPOSE_MOTION',
+    meetingId: m.id,
+    actor: humanActor(userId),
+    issuedAt,
+    payload: {
+      motionId,
+      motionType: input.type,
+      content: input.content,
+      details: input.details,
+    },
+  });
+  if ('error' in execution)
+    return execution.error;
+  const motion = motionById(motionId)!;
   log(
     `@${userName(userId)} 提出动议 #M${motion.id}【${meta.label}】${motion.content}${viaNoFloor ? '（无需发言权，临时夺下发言权）' : ''}`,
     { kind: 'motion', actor: userId, icon: 'i-lucide-file-plus-2' },
@@ -341,18 +376,20 @@ export function resolveRuling(uphold: boolean, userId = meetingState.currentUser
 
 export function secondMotion(motionId: number, userId = meetingState.currentUserId): string | null {
   const m = meetingState.meeting;
-  const motion = motionById(motionId);
-  if (!motion)
-    return '动议不存在';
-  const check = canSecondMotion(m, userId, motion);
-  if (!check.ok)
-    return check.reason!;
-  motion.seconders.push(userId);
+  const issuedAt = Date.now();
+  const execution = executeDomainCommand({
+    version: 1,
+    commandId: commandId('SECOND_MOTION', issuedAt),
+    type: 'SECOND_MOTION',
+    meetingId: m.id,
+    actor: humanActor(userId),
+    issuedAt,
+    payload: { motionId },
+  });
+  if ('error' in execution)
+    return execution.error;
   log(`@${userName(userId)} 附议了动议 #M${motionId}`, { kind: 'second', actor: userId, icon: 'i-lucide-thumbs-up' });
-  if (motion.seconders.length >= 1) {
-    motion.status = MotionStatusMap.PENDING;
-    log(`动议 #M${motionId} 已获附议，进入辩论阶段`, { kind: 'motion', icon: 'i-lucide-message-square', tone: 'success' });
-  }
+  log(`动议 #M${motionId} 已获附议，进入辩论阶段`, { kind: 'motion', icon: 'i-lucide-message-square', tone: 'success' });
   return null;
 }
 
@@ -360,37 +397,45 @@ export function secondMotion(motionId: number, userId = meetingState.currentUser
 
 export function openVote(motionId: number, userId = meetingState.currentUserId): string | null {
   const m = meetingState.meeting;
-  const motion = motionById(motionId);
-  if (!motion)
-    return '动议不存在';
-  const check = canOpenVote(m, userId, motion);
-  if (!check.ok)
-    return check.reason!;
-  const now = Date.now();
-  motion.status = MotionStatusMap.VOTING;
-  m.status = MeetingStatusMap.VOTING;
-  m.activeVote = {
-    id: nextVoteId(),
-    motionId,
-    threshold: motionMeta(motion.type).threshold,
-    method: VoteMethodMap.SIGNED_BALLOT,
-    ballots: {},
-    startedAt: now,
-    deadlineAt: now + m.voteDuration * 1000,
-  };
+  const issuedAt = Date.now();
+  const durationSeconds = m.voteDuration;
+  const execution = executeDomainCommand({
+    version: 1,
+    commandId: commandId('OPEN_VOTE', issuedAt),
+    type: 'OPEN_VOTE',
+    meetingId: m.id,
+    actor: humanActor(userId),
+    issuedAt,
+    payload: {
+      motionId,
+      voteId: nextVoteId(),
+      durationSeconds,
+    },
+  });
+  if ('error' in execution)
+    return execution.error;
   log(`主持开启对动议 #M${motionId} 的投票（${m.voteDuration} 秒）`, { kind: 'vote', actor: userId, icon: 'i-lucide-vote', tone: 'warning' });
   clearVoteTimer();
-  voteTimer = setTimeout(closeVote, m.voteDuration * 1000);
+  voteTimer = setTimeout(closeVote, durationSeconds * 1000);
   return null;
 }
 
 export function castBallot(ballot: Ballot, userId = meetingState.currentUserId): string | null {
   const m = meetingState.meeting;
-  const check = canCastBallot(m, userId);
-  if (!check.ok)
-    return check.reason!;
-  m.activeVote!.ballots[userId] = ballot;
-  if (Object.keys(m.activeVote!.ballots).length >= m.members.length) {
+  const issuedAt = Date.now();
+  const execution = executeDomainCommand({
+    version: 1,
+    commandId: commandId('CAST_BALLOT', issuedAt),
+    type: 'CAST_BALLOT',
+    meetingId: m.id,
+    actor: humanActor(userId),
+    issuedAt,
+    payload: { ballot },
+  });
+  if ('error' in execution)
+    return execution.error;
+  const updated = meetingState.meeting;
+  if (updated.activeVote && Object.keys(updated.activeVote.ballots).length >= updated.members.length) {
     closeVote();
   }
   return null;
@@ -401,62 +446,42 @@ export function closeVote(userId?: string): string | null {
   const vote = m.activeVote;
   if (!vote)
     return '当前没有进行中的投票';
-  if (userId && !m.recordMode && !isChair(m, userId))
-    return '仅主持可提前结束投票';
+  const underlyingMotion = activeMotions(m).findLast(motion => motion.id !== vote.motionId) ?? null;
+  const restorableMotion = laidAsideMotions(m).at(-1) ?? null;
+  const issuedAt = Date.now();
+  const execution = executeDomainCommand({
+    version: 1,
+    commandId: commandId('CLOSE_VOTE', issuedAt),
+    type: 'CLOSE_VOTE',
+    meetingId: m.id,
+    actor: userId ? humanActor(userId) : systemActor(),
+    issuedAt,
+    payload: {},
+  });
+  if ('error' in execution)
+    return execution.error;
+  const decided = execution.events[0];
+  if (!decided || (decided.type !== 'MOTION_PASSED' && decided.type !== 'MOTION_REJECTED'))
+    return '领域状态机未产生投票结果';
   clearVoteTimer();
+  const result = decided.payload.result;
   const motion = motionById(vote.motionId);
-  const yea: string[] = [];
-  const nay: string[] = [];
-  const abstain: string[] = [];
-  for (const [uid, ballot] of Object.entries(vote.ballots)) {
-    if (ballot === BallotMap.YEA)
-      yea.push(uid);
-    else if (ballot === BallotMap.NAY)
-      nay.push(uid);
-    else abstain.push(uid);
-  }
-  const passed = isPassed(vote.threshold, yea.length, nay.length);
-  const result: VoteResult = {
-    id: vote.id,
-    threshold: vote.threshold,
-    voter: m.members.length,
-    method: VoteMethodMap.SIGNED_BALLOT,
-    passed,
-    yea,
-    nay,
-    abstain,
-    invalid: [],
-  };
-  m.votes.push(result);
-  m.activeVote = null;
-  m.status = MeetingStatusMap.IN_PROGRESS;
-  if (motion) {
-    motion.status = MotionStatusMap.DISPOSED;
-    motion.voteId = result.id;
-    applyMotionEffects(motion, passed);
-  }
+  if (motion)
+    logMotionEffects(motion, result.passed, underlyingMotion, restorableMotion);
   log(
-    `#V${result.id} 投票结果：${passed ? '通过' : '否决'}（赞成 ${yea.length} / 反对 ${nay.length} / 弃权 ${abstain.length}）`,
-    { kind: 'vote', icon: passed ? 'i-lucide-check-circle-2' : 'i-lucide-x-circle', tone: passed ? 'success' : 'error' },
+    `#V${result.id} 投票结果：${result.passed ? '通过' : '否决'}（赞成 ${result.yea.length} / 反对 ${result.nay.length} / 弃权 ${result.abstain.length}）`,
+    { kind: 'vote', icon: result.passed ? 'i-lucide-check-circle-2' : 'i-lucide-x-circle', tone: result.passed ? 'success' : 'error' },
   );
   return null;
 }
 
-function isPassed(threshold: VoteTreshold, yea: number, nay: number): boolean {
-  switch (threshold) {
-    case VoteTresholdMap.TWO_THIRDS:
-      return yea * 3 >= (yea + nay) * 2 && yea > 0;
-    case VoteTresholdMap.UNANIMOUS:
-      return nay === 0 && yea > 0;
-    default:
-      return yea > nay;
-  }
-}
-
-/** 动议表决通过/否决后的后续效果。 */
-function applyMotionEffects(motion: Motion, passed: boolean): void {
-  const m = meetingState.meeting;
-  const target = topMotion(m); // 栈中的下一项动议（本动议已出栈）
+/** 为领域状态机已经完成的后续效果生成演示日志。 */
+function logMotionEffects(
+  motion: Motion,
+  passed: boolean,
+  target: Motion | null,
+  restored: Motion | null,
+): void {
   const label = motionMeta(motion.type).label;
   if (!passed) {
     if (motion.type === MotionTypeMap.MAIN)
@@ -466,48 +491,42 @@ function applyMotionEffects(motion: Motion, passed: boolean): void {
   switch (motion.type) {
     case MotionTypeMap.LAY_ON_TABLE:
       if (target) {
-        target.status = MotionStatusMap.LAID_ASIDE;
         log(`动议 #M${target.id} 被搁置`, { kind: 'motion', icon: 'i-lucide-pause', tone: 'warning' });
       }
       break;
     case MotionTypeMap.POSTPONE_TO_TIME:
     case MotionTypeMap.REFER_TO_COMMITTEE:
       if (target) {
-        target.status = MotionStatusMap.LAID_ASIDE;
         log(`动议 #M${target.id} ${motion.type === MotionTypeMap.REFER_TO_COMMITTEE ? '已委托给委员会' : '已推迟'}，暂时移出审议`, { kind: 'motion', icon: 'i-lucide-pause', tone: 'warning' });
       }
       break;
     case MotionTypeMap.POSTPONE_INDEFINITELY:
       if (target) {
-        target.status = MotionStatusMap.DISPOSED;
         log(`动议 #M${target.id} 被无限期推迟（视同否决）`, { kind: 'motion', icon: 'i-lucide-x', tone: 'error' });
       }
       break;
     case MotionTypeMap.AMEND:
       if (target) {
-        target.content = `${target.content}（修正：${motion.content}）`;
         log(`修正案通过，动议 #M${target.id} 内容已更新`, { kind: 'motion', icon: 'i-lucide-pencil', tone: 'success' });
       }
       break;
     case MotionTypeMap.PREVIOUS_QUESTION:
       log('辩论已截止，请主持对下一项动议开启投票', { kind: 'motion', icon: 'i-lucide-mic-off', tone: 'warning' });
       break;
-    case MotionTypeMap.TAKE_FROM_TABLE: {
-      const laidAside = laidAsideMotions(m);
-      const restored = laidAside[laidAside.length - 1];
+    case MotionTypeMap.TAKE_FROM_TABLE:
       if (restored) {
-        restored.status = MotionStatusMap.PENDING;
         log(`动议 #M${restored.id} 恢复审议`, { kind: 'motion', icon: 'i-lucide-undo-2', tone: 'success' });
       }
       break;
-    }
     case MotionTypeMap.ADJOURN:
-      doEndMeeting(null);
+      meetingState.pendingRulingMotionId = null;
+      log('休会动议通过，会议结束', {
+        kind: 'meeting',
+        icon: 'i-lucide-square',
+        tone: 'warning',
+      });
       break;
     case MotionTypeMap.RECESS:
-      m.status = MeetingStatusMap.RECESSED;
-      m.floor = [];
-      m.floorHolder = null;
       log('休息动议通过，会议进入休会状态', { kind: 'meeting', icon: 'i-lucide-coffee', tone: 'warning' });
       break;
     default:
@@ -652,4 +671,5 @@ export function resetMeeting(): void {
   meetingState.currentUserId = 'u1';
   meetingState.logs = [];
   meetingState.pendingRulingMotionId = null;
+  domainCommandSeq = 0;
 }

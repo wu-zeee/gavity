@@ -8,6 +8,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
+    "test": "bun test",
     "gen-auth-schema": "auth generate --yes --config ./server/utils/auth.ts --output ./server/utils/db/schema/auth.ts"
   },
   "dependencies": {
