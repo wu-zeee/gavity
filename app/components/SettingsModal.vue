@@ -26,6 +26,9 @@ watch(
       form.title = meeting.value.profile.title;
       form.voteDuration = meeting.value.voteDuration;
       editingId.value = null;
+      newAgenda.title = '';
+      newAgenda.details = '';
+      newAgenda.isSpecial = false;
     }
   },
 );
@@ -124,7 +127,7 @@ const statusItems = [
           <div
             v-for="(item, index) in meeting.agenda"
             :key="item.id"
-            class="rounded-md bg-muted px-3 py-1.5 text-sm"
+            class="rounded-none bg-muted px-3 py-1.5 text-sm"
           >
             <!-- 查看模式 -->
             <div v-if="editingId !== item.id" class="flex items-center gap-2">
@@ -161,7 +164,7 @@ const statusItems = [
           </div>
         </div>
 
-        <div v-if="canEdit" class="space-y-2 rounded-lg border border-dashed border-default p-3">
+        <div v-if="canEdit" class="space-y-2 rounded-none border border-dashed border-default p-3">
           <UInput v-model="newAgenda.title" placeholder="新议题标题" class="w-full" />
           <div class="flex gap-2">
             <UInput v-model="newAgenda.details" placeholder="议题说明（可选）" class="flex-1" />
@@ -176,7 +179,7 @@ const statusItems = [
           <div
             v-for="user in [...meeting.members, ...meeting.observers]"
             :key="user"
-            class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm"
+            class="flex items-center gap-2 rounded-none bg-muted px-3 py-1.5 text-sm"
           >
             <UAvatar :alt="userName(user)" size="2xs" />
             <span class="flex-1">{{ userName(user) }}</span>

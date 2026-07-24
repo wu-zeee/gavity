@@ -1,6 +1,4 @@
 <script setup lang="ts">
-const toast = useToast();
-
 const meeting = computed(() => meetingState.meeting);
 
 /** 侧栏默认折叠，仅显示竖排头像；拖动边缘 rail 可展开。 */
@@ -31,11 +29,6 @@ const rows = computed<Row[]>(() => {
 const floorHolderName = computed(() => userName(meeting.value.floorHolder));
 const canAssign = computed(() => canAssignFloor(meeting.value, meetingState.currentUserId).ok);
 
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
-}
-
 function roleBadge(role: Row['role']): { label: string, color: 'primary' | 'neutral' | 'warning' } {
   if (role === 'host')
     return { label: '主持', color: 'primary' };
@@ -63,7 +56,7 @@ function roleBadge(role: Row['role']): { label: string, color: 'primary' | 'neut
           v-for="row in rows"
           :key="row.id"
           type="button"
-          class="relative rounded-lg p-1 cursor-pointer"
+          class="relative rounded-none p-1 cursor-pointer"
           @click="uiState.memberDetailId = row.id"
         >
           <UAvatar :alt="row.name" size="sm" :class="row.hasFloor ? 'ring-2 ring-primary' : ''" />
@@ -80,7 +73,7 @@ function roleBadge(role: Row['role']): { label: string, color: 'primary' | 'neut
           <div class="text-xs font-medium text-muted">
             与会者（{{ rows.length }}）
           </div>
-          <div class="mt-2 rounded-md bg-muted px-2.5 py-2 text-xs">
+          <div class="mt-2 rounded-none bg-muted px-2.5 py-2 text-xs">
             <div class="flex items-center gap-1.5">
               <UIcon name="i-lucide-mic" class="size-3.5 shrink-0" :class="meeting.floorHolder ? 'text-primary' : 'text-dimmed'" />
               <span v-if="meeting.floorHolder" class="font-medium text-highlighted">{{ floorHolderName }} 发言中</span>
@@ -98,7 +91,7 @@ function roleBadge(role: Row['role']): { label: string, color: 'primary' | 'neut
             v-for="row in rows"
             :key="row.id"
             type="button"
-            class="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-elevated"
+            class="group flex w-full items-center gap-2.5 rounded-none px-2 py-2 text-left transition-colors hover:bg-elevated"
             :class="{ 'bg-elevated ring-1 ring-primary/40': row.hasFloor }"
             @click="uiState.memberDetailId = row.id"
           >
@@ -135,7 +128,7 @@ function roleBadge(role: Row['role']): { label: string, color: 'primary' | 'neut
                 variant="outline"
                 size="xs"
                 class="opacity-0 group-hover:opacity-100"
-                @click.stop="run(assignFloor(row.id))"
+                @click.stop="notifyError(assignFloor(row.id))"
               />
             </UTooltip>
           </button>

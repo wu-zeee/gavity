@@ -89,6 +89,7 @@ export function createMeeting(): Meeting {
     activeVote: null,
     voteDuration: 60,
     startedAt: null,
+    endedAt: null,
   };
 }
 
@@ -186,6 +187,7 @@ function doEndMeeting(userId: string | null): void {
   m.activeVote = null;
   m.floor = [];
   m.floorHolder = null;
+  m.endedAt = Date.now();
   meetingState.pendingRulingMotionId = null;
   for (const motion of m.motions) {
     if (motion.status !== MotionStatusMap.DISPOSED && motion.status !== MotionStatusMap.LAID_ASIDE) {

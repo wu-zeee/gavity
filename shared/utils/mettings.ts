@@ -213,5 +213,7 @@ export const Meeting = z.object({
   voteDuration: z.int(),
   /** Unix timestamp in milliseconds. */
   startedAt: z.int().nullable(),
+  /** Unix timestamp in milliseconds when the meeting ended. */
+  endedAt: z.int().nullable(),
 });
 export type Meeting = z.infer<typeof Meeting>;

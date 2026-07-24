@@ -26,7 +26,7 @@ function rule(uphold: boolean): void {
           </UBadge>
           <span class="text-xs text-muted">@{{ userName(motion.proposer) }} 提出</span>
         </div>
-        <p class="rounded-md bg-muted px-3 py-2 text-sm text-default">
+        <p class="rounded-none bg-muted px-3 py-2 text-sm text-default">
           {{ motion.content }}
         </p>
         <p v-if="motion.details" class="text-xs text-muted">

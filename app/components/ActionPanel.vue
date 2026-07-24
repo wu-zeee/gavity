@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { AgendaItemStatusMap, MeetingStatusMap } from '#shared/utils/mettings';
-
-const toast = useToast();
+import { AgendaItemStatusMap, MeetingStatusMap, MotionStatusMap } from '#shared/utils/mettings';
 
 const meeting = computed(() => meetingState.meeting);
 const selfId = computed(() => meetingState.currentUserId);
 
+const isHost = computed(() => meeting.value.profile.chair === selfId.value);
 const isObserver = computed(() => roleOf(meeting.value, selfId.value) === 'observer');
 
 const grabCheck = computed(() => canGrabFloor(meeting.value, selfId.value));
@@ -45,7 +44,7 @@ onUnmounted(() => {
     clearInterval(countdownTimer);
 });
 
-const canSwitch = computed(() => canSwitchAgenda(meeting.value, selfId.value).ok);
+const canSwitchInfo = computed(() => canSwitchAgenda(meeting.value, selfId.value));
 
 const itemStatusMeta: Record<number, { label: string, icon: string, class: string }> = {
   [AgendaItemStatusMap.PENDING]: { label: '待讨论', icon: 'i-lucide-circle', class: 'text-dimmed' },
@@ -78,25 +77,33 @@ const hint = computed(() => {
   if (floorCountdown.value > 0)
     return `发言权将在 ${floorCountdown.value} 秒后开放抢夺`;
   if (grabCheck.value.ok)
-    return '他人正在发言';
+    return '发言权空闲，可以抢夺';
+  const top = topMotion(m);
+  if (isHost.value && top && top.status === MotionStatusMap.PENDING && meetingState.pendingRulingMotionId == null)
+    return '可对当前动议开启投票';
   return '请等待主持推进会议';
 });
 
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
-}
+/** 提出动议按钮的 tooltip。 */
+const motionTooltip = computed(() => {
+  const m = meeting.value;
+  if (m.recordMode)
+    return '记录模式：可自由提出动议';
+  if (m.status !== MeetingStatusMap.IN_PROGRESS)
+    return '会议进行中可提出动议';
+  if (m.floorHolder === selfId.value)
+    return '从 20+ 种动议类型中选择并提交';
+  return '部分动议需要发言权，可在弹窗中查看';
+});
 
 function onGrabClick(): void {
   if (holdingFloor.value)
-    run(endFloor());
-  else run(grabFloor());
+    notifyError(endFloor());
+  else notifyError(grabFloor());
 }
 
 function onSwitch(itemId: number): void {
-  if (!canSwitch.value)
-    return;
-  run(switchAgenda(itemId));
+  notifyError(switchAgenda(itemId));
 }
 
 const logListRef = useTemplateRef('logList');
@@ -126,11 +133,10 @@ watch(
           v-for="(item, index) in meeting.agenda"
           :key="item.id"
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
-          :class="[
-            item.id === meeting.currentAgendaId ? 'bg-accented' : 'hover:bg-elevated',
-            canSwitch ? 'cursor-pointer' : 'cursor-default',
-          ]"
+          :disabled="!canSwitchInfo.ok"
+          :title="canSwitchInfo.reason"
+          class="flex w-full items-center gap-2.5 rounded-none px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          :class="item.id === meeting.currentAgendaId ? 'bg-accented' : 'hover:bg-elevated'"
           @click="onSwitch(item.id)"
         >
           <UIcon :name="itemStatusMeta[item.status]?.icon ?? 'i-lucide-circle'" class="size-4 shrink-0" :class="itemStatusMeta[item.status]?.class" />
@@ -161,7 +167,7 @@ watch(
         <span class="ml-auto">{{ meetingState.logs.length }} 条</span>
       </div>
       <div ref="logList" class="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-3">
-        <div v-if="!meetingState.logs.length" class="rounded-md border border-dashed border-default p-3 text-center text-xs text-dimmed">
+        <div v-if="!meetingState.logs.length" class="rounded-none border border-dashed border-default p-3 text-center text-xs text-dimmed">
           会议操作将实时记录在这里
         </div>
         <div
@@ -192,7 +198,7 @@ watch(
         />
       </UTooltip>
 
-      <UTooltip text="从 20+ 种动议类型中选择并提交">
+      <UTooltip :text="motionTooltip">
         <UButton
           block
           label="提出动议"
@@ -205,7 +211,7 @@ watch(
         />
       </UTooltip>
 
-      <div class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted">
+      <div class="flex items-start gap-1.5 rounded-none bg-muted px-2.5 py-2 text-xs text-muted">
         <UIcon name="i-lucide-lightbulb" class="mt-0.5 size-3.5 shrink-0" />
         <span>{{ hint }}</span>
       </div>
@@ -213,7 +219,7 @@ watch(
 
     <!-- 观察员提示 -->
     <div v-else class="border-t border-default p-3">
-      <div class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted">
+      <div class="flex items-start gap-1.5 rounded-none bg-muted px-2.5 py-2 text-xs text-muted">
         <UIcon name="i-lucide-eye" class="mt-0.5 size-3.5 shrink-0" />
         <span>{{ hint }}</span>
       </div>

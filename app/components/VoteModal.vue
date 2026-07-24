@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Ballot } from '#shared/utils/mettings';
-import { BallotMap, VoteTresholdMap } from '#shared/utils/mettings';
+import { BallotMap } from '#shared/utils/mettings';
 
 const toast = useToast();
 
@@ -17,14 +17,10 @@ const votedCount = computed(() => Object.keys(vote.value?.ballots ?? {}).length)
 const totalCount = computed(() => meeting.value.members.length);
 const remaining = computed(() => Math.max(0, Math.ceil(((vote.value?.deadlineAt ?? 0) - now.value) / 1000)));
 
-const thresholdLabel = computed(() => {
+const thresholdLabelText = computed(() => {
   if (!vote.value)
     return '';
-  if (vote.value.threshold === VoteTresholdMap.TWO_THIRDS)
-    return '需三分之二多数通过';
-  if (vote.value.threshold === VoteTresholdMap.UNANIMOUS)
-    return '需全体一致通过';
-  return '需简单多数通过';
+  return `需${thresholdLabel(vote.value.threshold)}通过`;
 });
 
 const isHost = computed(() => meeting.value.profile.chair === meetingState.currentUserId);
@@ -57,7 +53,7 @@ function confirm(): void {
     return;
   const err = castBallot(selected.value);
   if (err) {
-    toast.add({ title: err, color: 'error', icon: 'i-lucide-circle-alert' });
+    notifyError(err);
     return;
   }
   toast.add({ title: '您的投票已提交', color: 'success', icon: 'i-lucide-check-circle-2' });
@@ -66,9 +62,7 @@ function confirm(): void {
 }
 
 function closeEarly(): void {
-  const err = closeVote(meetingState.currentUserId);
-  if (err)
-    toast.add({ title: err, color: 'error', icon: 'i-lucide-circle-alert' });
+  notifyError(closeVote(meetingState.currentUserId));
 }
 </script>
 
@@ -76,12 +70,12 @@ function closeEarly(): void {
   <UModal v-model:open="uiState.voteModalOpen" title="投票表决" :description="motion ? `动议 #M${motion.id} · ${motionMeta(motion.type).label}` : ''" :ui="{ footer: 'justify-between' }">
     <template #body>
       <div v-if="vote && motion" class="space-y-4">
-        <div class="rounded-md bg-muted px-3 py-2 text-sm text-default">
+        <div class="rounded-none bg-muted px-3 py-2 text-sm text-default">
           {{ motion.content }}
         </div>
 
         <div class="flex items-center justify-between text-xs text-muted">
-          <span>{{ thresholdLabel }}</span>
+          <span>{{ thresholdLabelText }}</span>
           <span class="flex items-center gap-1" :class="remaining <= 10 ? 'text-error' : ''">
             <UIcon name="i-lucide-timer" class="size-3.5" />
             剩余 {{ remaining }} 秒
@@ -94,7 +88,7 @@ function closeEarly(): void {
               v-for="opt in options"
               :key="opt.value"
               type="button"
-              class="flex flex-col items-center gap-1.5 rounded-lg border-2 px-3 py-4 transition-colors"
+              class="flex flex-col items-center gap-1.5 rounded-none border-2 px-3 py-4 transition-colors"
               :class="selected === opt.value
                 ? 'border-primary bg-accented'
                 : 'border-default hover:border-accented hover:bg-elevated'"

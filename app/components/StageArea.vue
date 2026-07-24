@@ -22,7 +22,7 @@ const summary = computed(() => {
     passed: m.votes.filter((v: VoteResult) => v.passed).length,
     rejected: m.votes.filter((v: VoteResult) => !v.passed).length,
     agendaPassed: m.agenda.filter((a: AgendaItem) => a.status === AgendaItemStatusMap.PASSED).length,
-    duration: m.startedAt ? Math.round((Date.now() - m.startedAt) / 60000) : 0,
+    duration: m.startedAt ? Math.round(((m.endedAt ?? Date.now()) - m.startedAt) / 60000) : 0,
   };
 });
 
@@ -40,7 +40,7 @@ function voteCountDisplay(vote: VoteResult): string {
 <template>
   <div class="flex h-full flex-col gap-4 overflow-y-auto p-4">
     <!-- 会议结束：纪要摘要 -->
-    <div v-if="meeting.status === MeetingStatusMap.ENDED" class="rounded-xl border border-default bg-elevated p-5">
+    <div v-if="meeting.status === MeetingStatusMap.ENDED" class="rounded-none border border-default bg-elevated p-5">
       <div class="flex items-center gap-2 text-lg font-semibold text-highlighted">
         <UIcon name="i-lucide-scroll-text" class="size-5" />
         会议纪要
@@ -49,7 +49,7 @@ function voteCountDisplay(vote: VoteResult): string {
         「{{ meeting.profile.title }}」已结束。
       </p>
       <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="rounded-lg bg-muted p-3 text-center">
+        <div class="rounded-none bg-muted p-3 text-center">
           <div class="text-2xl font-bold text-highlighted">
             {{ summary.motions }}
           </div>
@@ -57,7 +57,7 @@ function voteCountDisplay(vote: VoteResult): string {
             动议总数
           </div>
         </div>
-        <div class="rounded-lg bg-muted p-3 text-center">
+        <div class="rounded-none bg-muted p-3 text-center">
           <div class="text-2xl font-bold text-success">
             {{ summary.passed }}
           </div>
@@ -65,7 +65,7 @@ function voteCountDisplay(vote: VoteResult): string {
             表决通过
           </div>
         </div>
-        <div class="rounded-lg bg-muted p-3 text-center">
+        <div class="rounded-none bg-muted p-3 text-center">
           <div class="text-2xl font-bold text-error">
             {{ summary.rejected }}
           </div>
@@ -73,7 +73,7 @@ function voteCountDisplay(vote: VoteResult): string {
             表决否决
           </div>
         </div>
-        <div class="rounded-lg bg-muted p-3 text-center">
+        <div class="rounded-none bg-muted p-3 text-center">
           <div class="text-2xl font-bold text-highlighted">
             {{ summary.agendaPassed }}/{{ meeting.agenda.length }}
           </div>
@@ -89,7 +89,7 @@ function voteCountDisplay(vote: VoteResult): string {
         <div
           v-for="vote in meeting.votes"
           :key="vote.id"
-          class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs"
+          class="flex items-center gap-2 rounded-none bg-muted px-3 py-1.5 text-xs"
         >
           <UIcon :name="vote.passed ? 'i-lucide-check-circle-2' : 'i-lucide-x-circle'" class="size-3.5" :class="vote.passed ? 'text-success' : 'text-error'" />
           <span>#V{{ vote.id }}</span>
@@ -101,7 +101,7 @@ function voteCountDisplay(vote: VoteResult): string {
 
     <template v-else>
       <!-- 当前议题 -->
-      <div class="rounded-xl border border-default bg-elevated p-4">
+      <div class="rounded-none border border-default bg-elevated p-4">
         <div class="flex items-center gap-2 text-xs text-muted">
           <UIcon name="i-lucide-list-video" class="size-3.5" />
           当前议题
@@ -128,25 +128,25 @@ function voteCountDisplay(vote: VoteResult): string {
       <MotionCard v-for="motion in stack" :key="motion.id" :motion="motion" />
       <div
         v-if="!stack.length && meeting.status === MeetingStatusMap.IN_PROGRESS"
-        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+        class="rounded-none border border-dashed border-default p-6 text-center text-sm text-muted"
       >
         当前没有待处理动议。持有发言权的成员可提出动议。
       </div>
       <div
         v-else-if="meeting.status === MeetingStatusMap.NOT_STARTED"
-        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+        class="rounded-none border border-dashed border-default p-6 text-center text-sm text-muted"
       >
         会议尚未开始，请主持点击顶部「开始会议」。
       </div>
       <div
         v-else-if="meeting.status === MeetingStatusMap.RECESSED"
-        class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
+        class="rounded-none border border-dashed border-default p-6 text-center text-sm text-muted"
       >
         会议休会中，等待主持恢复。
       </div>
 
       <!-- 已搁置动议 -->
-      <div v-if="laidAside.length" class="rounded-xl border border-default p-3">
+      <div v-if="laidAside.length" class="rounded-none border border-default p-3">
         <div class="text-xs font-medium text-muted">
           已搁置的动议（可通过「恢复议题」重新审议）
         </div>

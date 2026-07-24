@@ -1,17 +1,13 @@
 <script setup lang="ts">
-import type { Motion } from '#shared/utils/mettings';
-import { MotionStatusMap } from '#shared/utils/mettings';
+import type { Motion, MotionCategory } from '#shared/utils/mettings';
+import { MotionCategoryMap, MotionStatusMap } from '#shared/utils/mettings';
 
 const props = defineProps<{
   motion: Motion
 }>();
 
-const toast = useToast();
-
 const meeting = computed(() => meetingState.meeting);
 const meta = computed(() => motionMeta(props.motion.type));
-
-const thresholdLabel = computed(() => meta.value.threshold === 2 ? '三分之二多数' : meta.value.threshold === 3 ? '全体一致' : '简单多数');
 
 const isChairUser = computed(() => meeting.value.profile.chair === meetingState.currentUserId);
 const secondCheck = computed(() => canSecondMotion(meeting.value, meetingState.currentUserId, props.motion));
@@ -30,14 +26,26 @@ const voteProgress = computed(() => {
   return { voted: Object.keys(vote.ballots).length, total: meeting.value.members.length };
 });
 
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
+/** 莫兰迪动议类别色，用于卡片左侧竖线。 */
+const CATEGORY_COLORS: Record<MotionCategory, string> = {
+  [MotionCategoryMap.MAIN]: '#6B7A8F',
+  [MotionCategoryMap.SUBSIDIARY]: '#7A8B6F',
+  [MotionCategoryMap.PRIVILEGED]: '#B89968',
+  [MotionCategoryMap.INCIDENTAL]: '#9E6B6B',
+  [MotionCategoryMap.RESTORATIVE]: '#8B7B8B',
+};
+
+function categoryColor(category: MotionCategory): string {
+  return CATEGORY_COLORS[category] ?? '#000000';
 }
 </script>
 
 <template>
-  <div class="rounded-xl border-2 border-primary/60 bg-elevated p-4 shadow-sm">
+  <div
+    class="relative border border-default bg-elevated p-4 border-l-[3px]"
+    :style="{ borderLeftColor: categoryColor(meta.category) }"
+    :class="voteProgress ? 'border-black' : ''"
+  >
     <div class="flex flex-wrap items-center gap-2">
       <UBadge color="neutral" variant="subtle">
         {{ MOTION_CATEGORY_LABELS[meta.category] }}
@@ -46,7 +54,7 @@ function run(result: string | null): void {
       <UBadge color="neutral" variant="soft" size="sm">
         {{ MOTION_STATUS_LABELS[motion.status] }}
       </UBadge>
-      <span class="text-xs text-dimmed">#M{{ motion.id }}</span>
+      <span class="font-mono text-xs text-dimmed">#M{{ motion.id }}</span>
       <div class="flex-1" />
       <span class="text-xs text-muted">{{ formatTime(motion.createdAt) }}</span>
     </div>
@@ -70,7 +78,7 @@ function run(result: string | null): void {
       </span>
       <span class="flex items-center gap-1">
         <UIcon name="i-lucide-vote" class="size-3.5" />
-        {{ thresholdLabel }}
+        {{ thresholdLabel(meta.threshold) }}
       </span>
       <span v-if="meta.debatable" class="flex items-center gap-1">
         <UIcon name="i-lucide-messages-square" class="size-3.5" />
@@ -86,7 +94,7 @@ function run(result: string | null): void {
           icon="i-lucide-thumbs-up"
           size="sm"
           :disabled="!secondCheck.ok"
-          @click="run(secondMotion(motion.id))"
+          @click="notifyError(secondMotion(motion.id))"
         />
       </UTooltip>
 
@@ -97,7 +105,7 @@ function run(result: string | null): void {
           icon="i-lucide-vote"
           size="sm"
           :disabled="!openVoteCheck.ok"
-          @click="run(openVote(motion.id))"
+          @click="notifyError(openVote(motion.id))"
         />
       </UTooltip>
 
@@ -108,7 +116,7 @@ function run(result: string | null): void {
           icon="i-lucide-gavel"
           size="sm"
           color="primary"
-          @click="run(resolveRuling(true))"
+          @click="notifyError(resolveRuling(true))"
         />
         <UButton
           label="裁决不成立"
@@ -116,7 +124,7 @@ function run(result: string | null): void {
           size="sm"
           color="neutral"
           variant="outline"
-          @click="run(resolveRuling(false))"
+          @click="notifyError(resolveRuling(false))"
         />
       </template>
 
@@ -127,7 +135,7 @@ function run(result: string | null): void {
       </div>
 
       <!-- 投票进行中 -->
-      <template v-if="motion.status === MotionStatusMap.VOTING && voteProgress">
+      <template v-if="voteProgress">
         <UButton
           v-if="ballotCheck.ok"
           label="投票"
@@ -135,10 +143,24 @@ function run(result: string | null): void {
           size="sm"
           @click="uiState.voteModalOpen = true"
         />
-        <span v-else-if="myBallot !== undefined" class="flex items-center gap-1 text-xs text-success">
-          <UIcon name="i-lucide-check-circle-2" class="size-4" />
-          已投票
-        </span>
+        <UButton
+          v-else-if="myBallot !== undefined"
+          label="已投票"
+          icon="i-lucide-check-circle-2"
+          size="sm"
+          color="neutral"
+          variant="outline"
+          @click="uiState.voteModalOpen = true"
+        />
+        <UButton
+          v-if="isChairUser || meeting.recordMode"
+          label="提前结束"
+          icon="i-lucide-square"
+          size="sm"
+          color="neutral"
+          variant="outline"
+          @click="notifyError(closeVote(meetingState.currentUserId))"
+        />
         <span class="flex items-center gap-1 text-xs">
           <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
           {{ voteProgress.voted }}/{{ voteProgress.total }}

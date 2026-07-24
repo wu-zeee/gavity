@@ -65,9 +65,10 @@ function onSubmit(event: FormSubmitEvent<Schema>): void {
     details: event.data.details,
   });
   if (err) {
-    toast.add({ title: err, color: 'error', icon: 'i-lucide-circle-alert' });
+    notifyError(err);
     return;
   }
+  toast.add({ title: '动议已提交', color: 'success', icon: 'i-lucide-check-circle-2' });
   uiState.motionModalOpen = false;
   state.type = undefined;
   state.content = '';
@@ -89,7 +90,7 @@ function onSubmit(event: FormSubmitEvent<Schema>): void {
           />
         </UFormField>
 
-        <div v-if="selectedMeta" class="space-y-1.5 rounded-md bg-muted px-3 py-2 text-xs text-muted">
+        <div v-if="selectedMeta" class="space-y-1.5 rounded-none bg-muted px-3 py-2 text-xs text-muted">
           <p>{{ selectedMeta.description }}</p>
           <div class="flex flex-wrap gap-1.5">
             <UBadge size="sm" color="neutral" variant="subtle">
@@ -102,7 +103,7 @@ function onSubmit(event: FormSubmitEvent<Schema>): void {
               需要 1 人附议
             </UBadge>
             <UBadge v-if="!selectedMeta.chairRules" size="sm" color="neutral" variant="subtle">
-              {{ selectedMeta.threshold === 2 ? '三分之二多数' : selectedMeta.threshold === 3 ? '全体一致' : '简单多数' }}通过
+              {{ thresholdLabel(selectedMeta.threshold) }}通过
             </UBadge>
             <UBadge v-if="selectedMeta.debatable" size="sm" color="neutral" variant="subtle">
               可辩论

@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { MeetingStatusMap } from '#shared/utils/mettings';
 
-const toast = useToast();
-
 const meeting = computed(() => meetingState.meeting);
 const statusLabel = computed(() => MEETING_STATUS_LABELS[meeting.value.status]);
 
@@ -24,21 +22,27 @@ function roleLabel(role: 'host' | 'member' | 'observer'): string {
   return role === 'host' ? '主持' : role === 'member' ? '成员' : '观察员';
 }
 
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
+function onEndMeeting(): void {
+  const err = endMeeting();
+  if (err) {
+    notifyError(err);
+    return;
+  }
+  endConfirmOpen.value = false;
 }
 
-function onEndMeeting(): void {
-  run(endMeeting());
-  endConfirmOpen.value = false;
+const resetConfirmOpen = ref(false);
+
+function onResetMeeting(): void {
+  resetMeeting();
+  resetConfirmOpen.value = false;
 }
 </script>
 
 <template>
-  <header class="flex items-center gap-3 border-b border-default px-4 py-2.5 shrink-0">
+  <header class="flex h-14 items-center gap-3 border-b border-black px-4 shrink-0">
     <div class="flex items-center gap-2 min-w-0">
-      <div class="flex size-8 items-center justify-center rounded-lg bg-primary text-inverted">
+      <div class="flex size-8 items-center justify-center bg-primary text-inverted">
         <UIcon name="i-lucide-gavel" class="size-5" />
       </div>
       <div class="min-w-0">
@@ -80,14 +84,14 @@ function onEndMeeting(): void {
         label="开始会议"
         icon="i-lucide-play"
         size="sm"
-        @click="run(startMeeting())"
+        @click="notifyError(startMeeting())"
       />
       <UButton
         v-if="meeting.status === MeetingStatusMap.RECESSED"
         label="恢复会议"
         icon="i-lucide-play"
         size="sm"
-        @click="run(resumeMeeting())"
+        @click="notifyError(resumeMeeting())"
       />
       <UButton
         v-if="meeting.status === MeetingStatusMap.IN_PROGRESS || meeting.status === MeetingStatusMap.RECESSED"
@@ -103,7 +107,7 @@ function onEndMeeting(): void {
       label="重新开始"
       icon="i-lucide-rotate-ccw"
       size="sm"
-      @click="resetMeeting()"
+      @click="resetConfirmOpen = true"
     />
 
     <UTooltip text="会议设置">
@@ -117,6 +121,13 @@ function onEndMeeting(): void {
       <template #footer="{ close }">
         <UButton label="取消" color="neutral" variant="outline" @click="close" />
         <UButton label="确认结束" color="primary" @click="onEndMeeting" />
+      </template>
+    </UModal>
+
+    <UModal v-model:open="resetConfirmOpen" title="重新开始会议" description="将清空全部会议数据、日志与动议历史，无法恢复。是否确认？" :ui="{ footer: 'justify-end' }">
+      <template #footer="{ close }">
+        <UButton label="取消" color="neutral" variant="outline" @click="close" />
+        <UButton label="确认重置" color="error" @click="onResetMeeting" />
       </template>
     </UModal>
   </header>

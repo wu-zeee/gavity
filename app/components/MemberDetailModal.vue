@@ -1,6 +1,4 @@
 <script setup lang="ts">
-const toast = useToast();
-
 const meeting = computed(() => meetingState.meeting);
 const userId = computed(() => uiState.memberDetailId);
 const modalOpen = ref(false);
@@ -32,7 +30,7 @@ const statItems = computed(() => {
 
 function run(result: string | null): void {
   if (result) {
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
+    notifyError(result);
     return;
   }
   modalOpen.value = false;
@@ -73,7 +71,7 @@ function run(result: string | null): void {
         </div>
 
         <div class="grid grid-cols-4 gap-2">
-          <div v-for="item in statItems" :key="item.label" class="rounded-lg bg-muted p-2.5 text-center">
+          <div v-for="item in statItems" :key="item.label" class="rounded-none bg-muted p-2.5 text-center">
             <UIcon :name="item.icon" class="mx-auto size-4 text-muted" />
             <div class="mt-1 text-lg font-bold text-highlighted">
               {{ item.value }}
