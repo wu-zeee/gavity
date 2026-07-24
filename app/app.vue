@@ -24,25 +24,29 @@ useHead({ title: 'Gavity 会议控制台' });
 
       <UAlert
         v-if="meetingState.meeting.recordMode"
-        color="warning"
-        variant="subtle"
+        color="primary"
+        variant="soft"
         icon="i-lucide-pencil-line"
         title="记录模式已开启，操作限制已解除"
         class="rounded-none"
       />
 
-      <div class="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_340px]">
-        <aside class="min-h-0 border-r border-default">
-          <MemberList />
-        </aside>
-        <main class="min-h-0 bg-muted/40">
+      <div class="relative flex min-h-0 flex-1">
+        <MemberList />
+        <main class="flex min-h-0 flex-1 flex-col bg-muted/40">
           <StageArea />
         </main>
-        <aside class="min-h-0 border-l border-default">
+        <aside class="min-h-0 w-[340px] shrink-0 border-s border-default">
           <ActionPanel />
         </aside>
       </div>
     </div>
+
+    <DevOnly>
+      <div class="fixed bottom-4 right-4 z-50">
+        <ThemePicker />
+      </div>
+    </DevOnly>
 
     <MotionModal />
     <VoteModal />

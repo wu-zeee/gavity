@@ -3,17 +3,8 @@ import { MeetingStatusMap } from '#shared/utils/mettings';
 
 const toast = useToast();
 
-const statusColor: Record<number, 'neutral' | 'success' | 'warning' | 'info' | 'error'> = {
-  [MeetingStatusMap.NOT_STARTED]: 'neutral',
-  [MeetingStatusMap.IN_PROGRESS]: 'success',
-  [MeetingStatusMap.VOTING]: 'warning',
-  [MeetingStatusMap.RECESSED]: 'info',
-  [MeetingStatusMap.ENDED]: 'error',
-};
-
 const meeting = computed(() => meetingState.meeting);
 const statusLabel = computed(() => MEETING_STATUS_LABELS[meeting.value.status]);
-const statusBadgeColor = computed(() => statusColor[meeting.value.status] ?? 'neutral');
 
 const isHost = computed(() => meeting.value.profile.chair === meetingState.currentUserId);
 const recordMode = computed({
@@ -60,7 +51,7 @@ function onEndMeeting(): void {
       </div>
     </div>
 
-    <UBadge :color="statusBadgeColor" variant="subtle" size="lg" class="shrink-0">
+    <UBadge color="neutral" variant="subtle" size="lg" class="shrink-0">
       {{ statusLabel }}
     </UBadge>
 
@@ -68,7 +59,7 @@ function onEndMeeting(): void {
 
     <UTooltip :text="recordModeCheck.ok ? '解除所有操作限制，自由补录' : recordModeCheck.reason">
       <div class="flex items-center gap-2">
-        <span class="text-xs" :class="meeting.recordMode ? 'text-warning font-medium' : 'text-muted'">记录模式</span>
+        <span class="text-xs">记录模式</span>
         <USwitch v-model="recordMode" :disabled="!recordModeCheck.ok" size="sm" />
       </div>
     </UTooltip>
@@ -103,8 +94,7 @@ function onEndMeeting(): void {
         label="结束会议"
         icon="i-lucide-square"
         size="sm"
-        color="error"
-        variant="soft"
+        color="primary"
         @click="endConfirmOpen = true"
       />
     </template>
@@ -113,21 +103,20 @@ function onEndMeeting(): void {
       label="重新开始"
       icon="i-lucide-rotate-ccw"
       size="sm"
-      variant="soft"
       @click="resetMeeting()"
     />
 
     <UTooltip text="会议设置">
-      <UButton icon="i-lucide-settings" color="neutral" variant="ghost" size="sm" @click="uiState.settingsModalOpen = true" />
+      <UButton icon="i-lucide-settings" color="neutral" variant="outline" size="sm" @click="uiState.settingsModalOpen = true" />
     </UTooltip>
     <UTooltip text="帮助">
-      <UButton icon="i-lucide-circle-help" color="neutral" variant="ghost" size="sm" @click="uiState.helpModalOpen = true" />
+      <UButton icon="i-lucide-circle-help" color="neutral" variant="outline" size="sm" @click="uiState.helpModalOpen = true" />
     </UTooltip>
 
     <UModal v-model:open="endConfirmOpen" title="结束会议" description="结束后会议数据将冻结，是否确认结束？" :ui="{ footer: 'justify-end' }">
       <template #footer="{ close }">
         <UButton label="取消" color="neutral" variant="outline" @click="close" />
-        <UButton label="确认结束" color="error" @click="onEndMeeting" />
+        <UButton label="确认结束" color="primary" @click="onEndMeeting" />
       </template>
     </UModal>
   </header>

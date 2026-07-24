@@ -40,7 +40,7 @@ function rule(uphold: boolean): void {
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton label="不成立" color="neutral" variant="outline" @click="rule(false)" />
-        <UButton label="裁决成立" icon="i-lucide-gavel" color="warning" @click="rule(true)" />
+        <UButton label="裁决成立" icon="i-lucide-gavel" color="primary" @click="rule(true)" />
       </div>
     </template>
   </UModal>

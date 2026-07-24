@@ -2,14 +2,10 @@
 import type { AgendaItem, VoteResult } from '#shared/utils/mettings';
 import { AgendaItemStatusMap, MeetingStatusMap, VoteMethodMap } from '#shared/utils/mettings';
 
-const toast = useToast();
-
 const meeting = computed(() => meetingState.meeting);
 const currentItem = computed(() => meeting.value.agenda.find(a => a.id === meeting.value.currentAgendaId) ?? null);
 const stack = computed(() => activeMotions(meeting.value));
-const top = computed(() => stack.value[stack.value.length - 1] ?? null);
 const laidAside = computed(() => laidAsideMotions(meeting.value));
-const agendaOpen = ref(true);
 
 const itemStatusMeta: Record<number, { label: string, icon: string, class: string }> = {
   [AgendaItemStatusMap.PENDING]: { label: '待讨论', icon: 'i-lucide-circle', class: 'text-dimmed' },
@@ -17,8 +13,6 @@ const itemStatusMeta: Record<number, { label: string, icon: string, class: strin
   [AgendaItemStatusMap.PASSED]: { label: '已通过', icon: 'i-lucide-check-circle-2', class: 'text-success' },
   [AgendaItemStatusMap.REJECTED]: { label: '已否决', icon: 'i-lucide-x-circle', class: 'text-error' },
 };
-
-const canSwitch = computed(() => canSwitchAgenda(meeting.value, meetingState.currentUserId).ok);
 
 const summary = computed(() => {
   const m = meeting.value;
@@ -31,17 +25,6 @@ const summary = computed(() => {
     duration: m.startedAt ? Math.round((Date.now() - m.startedAt) / 60000) : 0,
   };
 });
-
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
-}
-
-function onSwitch(itemId: number): void {
-  if (!canSwitch.value)
-    return;
-  run(switchAgenda(itemId));
-}
 
 function voteCountDisplay(vote: VoteResult): string {
   if (vote.method === VoteMethodMap.SIGNED_BALLOT) {
@@ -137,14 +120,14 @@ function voteCountDisplay(vote: VoteResult): string {
           </p>
         </template>
         <p v-else class="mt-1.5 text-sm text-muted">
-          尚未选择议题，请主持在下方议程中选择。
+          尚未选择议题，请主持在右侧议程中选择。
         </p>
       </div>
 
-      <!-- 当前动议（叠加于议题之上） -->
-      <MotionCard v-if="top" :motion="top" :stack-below="stack.length - 1" />
+      <!-- 动议栈（主动议在前，附属/偶发动议追加其后） -->
+      <MotionCard v-for="motion in stack" :key="motion.id" :motion="motion" />
       <div
-        v-else-if="meeting.status === MeetingStatusMap.IN_PROGRESS"
+        v-if="!stack.length && meeting.status === MeetingStatusMap.IN_PROGRESS"
         class="rounded-xl border border-dashed border-default p-6 text-center text-sm text-muted"
       >
         当前没有待处理动议。持有发言权的成员可提出动议。
@@ -175,47 +158,6 @@ function voteCountDisplay(vote: VoteResult): string {
           </div>
         </div>
       </div>
-
-      <!-- 议程列表（可折叠） -->
-      <UCollapsible v-model:open="agendaOpen" class="rounded-xl border border-default">
-        <div class="flex items-center gap-2 px-4 py-2.5">
-          <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />
-          <span class="text-sm font-medium text-highlighted">议程（{{ meeting.agenda.length }}）</span>
-          <div class="flex-1" />
-          <UButton
-            :icon="agendaOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-            color="neutral"
-            variant="ghost"
-            size="xs"
-          />
-        </div>
-        <template #content>
-          <div class="border-t border-muted px-2 py-2">
-            <button
-              v-for="(item, index) in meeting.agenda"
-              :key="item.id"
-              type="button"
-              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
-              :class="[
-                item.id === meeting.currentAgendaId ? 'bg-accented' : 'hover:bg-elevated',
-                canSwitch ? 'cursor-pointer' : 'cursor-default',
-              ]"
-              @click="onSwitch(item.id)"
-            >
-              <UIcon :name="itemStatusMeta[item.status]?.icon ?? 'i-lucide-circle'" class="size-4 shrink-0" :class="itemStatusMeta[item.status]?.class" />
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm" :class="item.id === meeting.currentAgendaId ? 'font-medium text-highlighted' : 'text-default'">
-                  {{ index + 1 }}. {{ item.title }}
-                </div>
-              </div>
-              <UBadge v-if="item.id === meeting.currentAgendaId" size="sm" color="primary" variant="subtle">
-                当前
-              </UBadge>
-              <span v-else class="text-xs text-dimmed">{{ itemStatusMeta[item.status]?.label }}</span>
-            </button>
-          </div>
-        </template>
-      </UCollapsible>
     </template>
   </div>
 </template>

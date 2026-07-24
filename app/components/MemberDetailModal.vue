@@ -3,14 +3,16 @@ const toast = useToast();
 
 const meeting = computed(() => meetingState.meeting);
 const userId = computed(() => uiState.memberDetailId);
+const modalOpen = ref(false);
 
-const open = computed({
-  get: () => userId.value != null,
-  set: (v: boolean) => {
-    if (!v)
-      uiState.memberDetailId = null;
-  },
+watch(userId, (id) => {
+  if (id != null)
+    modalOpen.value = true;
 });
+
+function onAfterLeave(): void {
+  uiState.memberDetailId = null;
+}
 
 const role = computed(() => (userId.value ? roleOf(meeting.value, userId.value) : null));
 const stats = computed(() => (userId.value ? memberStats(userId.value) : null));
@@ -33,12 +35,12 @@ function run(result: string | null): void {
     toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
     return;
   }
-  uiState.memberDetailId = null;
+  modalOpen.value = false;
 }
 </script>
 
 <template>
-  <UModal v-model:open="open" title="与会者详情" :ui="{ footer: 'justify-end' }">
+  <UModal v-model:open="modalOpen" title="与会者详情" :ui="{ footer: 'justify-end' }" @after:leave="onAfterLeave">
     <template #body>
       <div v-if="userId" class="space-y-4">
         <div class="flex items-center gap-3">
@@ -89,7 +91,6 @@ function run(result: string | null): void {
         <UButton
           label="分配发言权"
           icon="i-lucide-mic"
-          variant="soft"
           :disabled="hasFloor"
           @click="run(assignFloor(userId))"
         />
@@ -97,8 +98,8 @@ function run(result: string | null): void {
           v-if="meeting.profile.chair !== userId"
           label="移交主持"
           icon="i-lucide-crown"
-          variant="soft"
-          color="warning"
+          color="neutral"
+          variant="outline"
           @click="run(transferChair(userId))"
         />
       </template>

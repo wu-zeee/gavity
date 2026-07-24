@@ -1,36 +1,71 @@
 <script setup lang="ts">
-import { MeetingStatusMap, MotionStatusMap } from '#shared/utils/mettings';
+import { AgendaItemStatusMap, MeetingStatusMap } from '#shared/utils/mettings';
 
 const toast = useToast();
 
 const meeting = computed(() => meetingState.meeting);
 const selfId = computed(() => meetingState.currentUserId);
 
+const isObserver = computed(() => roleOf(meeting.value, selfId.value) === 'observer');
+
 const grabCheck = computed(() => canGrabFloor(meeting.value, selfId.value));
 const holdingFloor = computed(() => meeting.value.floorHolder === selfId.value);
-const grabbing = computed(() => meeting.value.floor.includes(selfId.value));
 
-const top = computed(() => topMotion(meeting.value));
-const secondCheck = computed(() => (top.value ? canSecondMotion(meeting.value, selfId.value, top.value) : { ok: false, reason: '当前没有待附议的动议' }));
-const ballotCheck = computed(() => canCastBallot(meeting.value, selfId.value));
+/** 发言权倒计时（秒）。 */
+const floorCountdown = ref(0);
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
-const voteProgress = computed(() => {
-  const vote = meeting.value.activeVote;
-  if (!vote)
-    return null;
-  return { voted: Object.keys(vote.ballots).length, total: meeting.value.members.length };
+watch(
+  () => meeting.value.floorGrabAt,
+  (grabAt) => {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    if (grabAt == null) {
+      floorCountdown.value = 0;
+      return;
+    }
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((grabAt - Date.now()) / 1000));
+      floorCountdown.value = remaining;
+      if (remaining <= 0 && countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    };
+    tick();
+    countdownTimer = setInterval(tick, 200);
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  if (countdownTimer)
+    clearInterval(countdownTimer);
 });
+
+const canSwitch = computed(() => canSwitchAgenda(meeting.value, selfId.value).ok);
+
+const itemStatusMeta: Record<number, { label: string, icon: string, class: string }> = {
+  [AgendaItemStatusMap.PENDING]: { label: '待讨论', icon: 'i-lucide-circle', class: 'text-dimmed' },
+  [AgendaItemStatusMap.DISCUSSING]: { label: '讨论中', icon: 'i-lucide-message-circle', class: 'text-primary' },
+  [AgendaItemStatusMap.PASSED]: { label: '已通过', icon: 'i-lucide-check-circle-2', class: 'text-success' },
+  [AgendaItemStatusMap.REJECTED]: { label: '已否决', icon: 'i-lucide-x-circle', class: 'text-error' },
+};
 
 /** 当前可执行操作的状态提示。 */
 const hint = computed(() => {
   const m = meeting.value;
+  if (isObserver.value)
+    return '你正在以观察员身份参会，无法执行操作';
   if (m.recordMode)
     return '记录模式：所有操作限制已解除';
   switch (m.status) {
     case MeetingStatusMap.NOT_STARTED:
       return '会议尚未开始';
     case MeetingStatusMap.VOTING:
-      return ballotCheck.value.ok ? '请对当前动议投票' : '投票进行中，请等待结果';
+      return '投票进行中，请在动议卡片中投票';
     case MeetingStatusMap.RECESSED:
       return '会议休会中';
     case MeetingStatusMap.ENDED:
@@ -40,14 +75,29 @@ const hint = computed(() => {
   }
   if (holdingFloor.value)
     return '你持有发言权，可以提出动议或结束发言';
-  if (grabbing.value)
-    return '正在抢夺发言权，等待当前发言结束';
-  if (top.value?.status === MotionStatusMap.DRAFT && secondCheck.value.ok)
-    return '有动议待附议，可以附议';
+  if (floorCountdown.value > 0)
+    return `发言权将在 ${floorCountdown.value} 秒后开放抢夺`;
   if (grabCheck.value.ok)
-    return '可以抢夺发言权';
+    return '他人正在发言';
   return '请等待主持推进会议';
 });
+
+function run(result: string | null): void {
+  if (result)
+    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
+}
+
+function onGrabClick(): void {
+  if (holdingFloor.value)
+    run(endFloor());
+  else run(grabFloor());
+}
+
+function onSwitch(itemId: number): void {
+  if (!canSwitch.value)
+    return;
+  run(switchAgenda(itemId));
+}
 
 const logListRef = useTemplateRef('logList');
 
@@ -61,102 +111,50 @@ watch(
   },
   { flush: 'post' },
 );
-
-const toneClass: Record<string, string> = {
-  info: 'text-muted',
-  success: 'text-success',
-  warning: 'text-warning',
-  error: 'text-error',
-};
-
-function run(result: string | null): void {
-  if (result)
-    toast.add({ title: result, color: 'error', icon: 'i-lucide-circle-alert' });
-}
-
-function onGrabClick(): void {
-  if (holdingFloor.value)
-    run(endFloor());
-  else if (grabbing.value)
-    run(cancelGrab());
-  else run(grabFloor());
-}
-
-function onSecondClick(): void {
-  if (!top.value)
-    return;
-  run(secondMotion(top.value.id));
-}
-
-function onVoteClick(): void {
-  uiState.voteModalOpen = true;
-}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- 操作按钮组 -->
-    <div class="space-y-2 border-b border-default p-3">
-      <UTooltip :text="holdingFloor ? '结束发言并移交发言权' : grabbing ? '退出本轮抢夺' : grabCheck.ok ? '先到先得，每轮重新开抢' : grabCheck.reason">
-        <UButton
-          block
-          size="lg"
-          :label="holdingFloor ? '结束发言' : grabbing ? '取消抢夺' : '抢发言权'"
-          :icon="holdingFloor ? 'i-lucide-mic-off' : 'i-lucide-hand'"
-          :color="holdingFloor ? 'warning' : 'primary'"
-          :variant="grabbing ? 'outline' : 'solid'"
-          :disabled="!holdingFloor && !grabbing && !grabCheck.ok"
-          :class="meeting.recordMode ? 'border-dashed' : ''"
-          @click="onGrabClick"
-        />
-      </UTooltip>
-
-      <UTooltip text="从 20+ 种动议类型中选择并提交">
-        <UButton
-          block
-          label="提出动议"
-          icon="i-lucide-file-plus-2"
-          variant="soft"
-          :disabled="meeting.status !== MeetingStatusMap.IN_PROGRESS && !meeting.recordMode"
-          :class="meeting.recordMode ? 'border-dashed' : ''"
-          @click="uiState.motionModalOpen = true"
-        />
-      </UTooltip>
-
-      <UTooltip :text="secondCheck.ok ? `附议当前动议（${top?.seconders.length ?? 0}/${meeting.secondsRequired}）` : secondCheck.reason">
-        <UButton
-          block
-          label="附议"
-          icon="i-lucide-thumbs-up"
-          variant="soft"
-          color="info"
-          :disabled="!secondCheck.ok"
-          :class="meeting.recordMode ? 'border-dashed' : ''"
-          @click="onSecondClick"
-        />
-      </UTooltip>
-
-      <UTooltip :text="ballotCheck.ok ? '对当前动议投票' : ballotCheck.reason">
-        <UButton
-          block
-          :label="voteProgress ? `投票（${voteProgress.voted}/${voteProgress.total}）` : '投票'"
-          icon="i-lucide-vote"
-          variant="soft"
-          color="warning"
-          :disabled="!ballotCheck.ok"
-          :class="meeting.recordMode ? 'border-dashed' : ''"
-          @click="onVoteClick"
-        />
-      </UTooltip>
-
-      <div class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted">
-        <UIcon name="i-lucide-lightbulb" class="mt-0.5 size-3.5 shrink-0" />
-        <span>{{ hint }}</span>
+    <!-- 议程列表 -->
+    <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted">
+        <UIcon name="i-lucide-list-checks" class="size-3.5" />
+        议程（{{ meeting.agenda.length }}）
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <button
+          v-for="(item, index) in meeting.agenda"
+          :key="item.id"
+          type="button"
+          class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
+          :class="[
+            item.id === meeting.currentAgendaId ? 'bg-accented' : 'hover:bg-elevated',
+            canSwitch ? 'cursor-pointer' : 'cursor-default',
+          ]"
+          @click="onSwitch(item.id)"
+        >
+          <UIcon :name="itemStatusMeta[item.status]?.icon ?? 'i-lucide-circle'" class="size-4 shrink-0" :class="itemStatusMeta[item.status]?.class" />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm" :class="item.id === meeting.currentAgendaId ? 'font-medium text-highlighted' : 'text-default'">
+              {{ index + 1 }}. {{ item.title }}
+              <UBadge v-if="item.isSpecial" size="sm" color="primary" variant="soft" class="ml-1">
+                特别
+              </UBadge>
+            </div>
+            <div v-if="item.scheduledAt" class="text-xs text-dimmed">
+              预定 {{ new Date(item.scheduledAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+            </div>
+          </div>
+          <UBadge v-if="item.id === meeting.currentAgendaId" size="sm" color="primary" variant="subtle">
+            当前
+          </UBadge>
+          <span v-else class="text-xs text-dimmed">{{ itemStatusMeta[item.status]?.label }}</span>
+        </button>
       </div>
     </div>
 
-    <!-- 实时日志流 -->
-    <div class="flex min-h-0 flex-1 flex-col">
+    <!-- 实时日志 -->
+    <div class="flex min-h-0 flex-1 flex-col border-t border-default">
       <div class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted">
         <UIcon name="i-lucide-activity" class="size-3.5" />
         实时日志
@@ -171,12 +169,53 @@ function onVoteClick(): void {
           :key="entry.id"
           class="flex items-start gap-1.5 text-xs leading-relaxed"
         >
-          <UIcon :name="entry.icon" class="mt-0.5 size-3.5 shrink-0" :class="toneClass[entry.tone]" />
+          <UIcon :name="entry.icon" class="mt-0.5 size-3.5 shrink-0 text-dimmed" />
           <div class="min-w-0 flex-1">
             <span class="text-dimmed">{{ formatTime(entry.at) }}</span>
-            <span class="ml-1" :class="toneClass[entry.tone]">{{ entry.text }}</span>
+            <span class="ml-1 text-dimmed">{{ entry.text }}</span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 操作按钮组（观察员隐藏） -->
+    <div v-if="!isObserver" class="space-y-2 border-t border-default p-3">
+      <UTooltip :text="holdingFloor ? '结束发言并释放发言权' : grabCheck.ok ? '先到先得' : grabCheck.reason">
+        <UButton
+          block
+          :label="holdingFloor ? '结束发言' : floorCountdown > 0 ? `抢发言权（${floorCountdown}s）` : '抢发言权'"
+          :icon="holdingFloor ? 'i-lucide-mic-off' : 'i-lucide-hand'"
+          color="primary"
+          :disabled="!holdingFloor && !grabCheck.ok"
+          :class="meeting.recordMode ? 'border-dashed' : ''"
+          @click="onGrabClick"
+        />
+      </UTooltip>
+
+      <UTooltip text="从 20+ 种动议类型中选择并提交">
+        <UButton
+          block
+          label="提出动议"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-file-plus-2"
+          :disabled="meeting.status !== MeetingStatusMap.IN_PROGRESS && !meeting.recordMode"
+          :class="meeting.recordMode ? 'border-dashed' : ''"
+          @click="uiState.motionModalOpen = true"
+        />
+      </UTooltip>
+
+      <div class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted">
+        <UIcon name="i-lucide-lightbulb" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ hint }}</span>
+      </div>
+    </div>
+
+    <!-- 观察员提示 -->
+    <div v-else class="border-t border-default p-3">
+      <div class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted">
+        <UIcon name="i-lucide-eye" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ hint }}</span>
       </div>
     </div>
   </div>

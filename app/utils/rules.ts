@@ -377,8 +377,10 @@ export function canGrabFloor(meeting: Meeting, userId: string): Constraint {
     return deny('会议当前不在讨论状态');
   if (meeting.floorHolder === userId)
     return deny('你已持有发言权');
-  if (meeting.floor.includes(userId))
-    return deny('你已在抢夺中');
+  if (meeting.floorHolder)
+    return deny('发言权被占用，等待发言结束');
+  if (meeting.floorGrabAt != null && Date.now() < meeting.floorGrabAt)
+    return deny('发言权即将开放，请稍候');
   return allow;
 }
 
@@ -498,6 +500,14 @@ export function canResumeMeeting(meeting: Meeting, userId: string): Constraint {
 export function canToggleRecordMode(meeting: Meeting, userId: string): Constraint {
   if (!isChair(meeting, userId))
     return deny('仅主持可切换记录模式');
+  return allow;
+}
+
+export function canEditAgenda(meeting: Meeting, userId: string): Constraint {
+  if (bypass(meeting))
+    return allow;
+  if (!isChair(meeting, userId))
+    return deny('仅主持可管理议程');
   return allow;
 }
 

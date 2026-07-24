@@ -178,6 +178,10 @@ export const AgendaItem = z.object({
   title: z.string(),
   details: z.string(),
   status: AgendaItemStatus,
+  /** Optional scheduled start time (unix ms). */
+  scheduledAt: z.int().nullable(),
+  /** Whether this is a special agenda item (higher priority). */
+  isSpecial: z.boolean(),
 });
 export type AgendaItem = z.infer<typeof AgendaItem>;
 
@@ -195,6 +199,8 @@ export const Meeting = z.object({
   floor: z.string().array(),
   /** Id of the member currently holding the floor. */
   floorHolder: z.string().nullable(),
+  /** Unix ms timestamp when floor grabbing opens (3s countdown after speech ends). */
+  floorGrabAt: z.int().nullable(),
   members: z.string().array(),
   observers: z.string().array(),
   agenda: AgendaItem.array(),
@@ -202,8 +208,7 @@ export const Meeting = z.object({
   motions: Motion.array(),
   votes: VoteResult.array(),
   activeVote: ActiveVote.nullable(),
-  /** Number of seconds required before a motion can proceed. */
-  secondsRequired: z.int(),
+
   /** Vote duration in seconds. */
   voteDuration: z.int(),
   /** Unix timestamp in milliseconds. */

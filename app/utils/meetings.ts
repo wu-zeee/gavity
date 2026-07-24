@@ -1,5 +1,6 @@
 import type {
   AgendaItem,
+  AgendaItemStatus,
   Ballot,
   Meeting,
   Motion,
@@ -73,19 +74,19 @@ export function createMeeting(): Meeting {
     recordMode: false,
     floor: [],
     floorHolder: null,
+    floorGrabAt: null,
     members: ['u1', 'u2', 'u3', 'u4', 'u5'],
     observers: ['u6'],
     agenda: [
-      { id: 1, title: '审议 2025 年度财务报告', details: '由财务委员会汇报年度收支情况，审议后表决是否通过。', status: AgendaItemStatusMap.PENDING },
-      { id: 2, title: '新会员入会审批', details: '审议本季度三位新会员的入会申请。', status: AgendaItemStatusMap.PENDING },
-      { id: 3, title: '年度大会筹备方案', details: '讨论年度大会的举办时间、地点与预算安排。', status: AgendaItemStatusMap.PENDING },
-      { id: 4, title: '章程修订草案（第二条）', details: '就章程第二条关于会员表决权的修订草案进行审议。', status: AgendaItemStatusMap.PENDING },
+      { id: 1, title: '审议 2025 年度财务报告', details: '由财务委员会汇报年度收支情况，审议后表决是否通过。', status: AgendaItemStatusMap.PENDING, scheduledAt: null, isSpecial: false },
+      { id: 2, title: '新会员入会审批', details: '审议本季度三位新会员的入会申请。', status: AgendaItemStatusMap.PENDING, scheduledAt: null, isSpecial: false },
+      { id: 3, title: '年度大会筹备方案', details: '讨论年度大会的举办时间、地点与预算安排。', status: AgendaItemStatusMap.PENDING, scheduledAt: null, isSpecial: true },
+      { id: 4, title: '章程修订草案（第二条）', details: '就章程第二条关于会员表决权的修订草案进行审议。', status: AgendaItemStatusMap.PENDING, scheduledAt: null, isSpecial: false },
     ],
     currentAgendaId: 1,
     motions: [],
     votes: [],
     activeVote: null,
-    secondsRequired: 2,
     voteDuration: 60,
     startedAt: null,
   };
@@ -165,9 +166,6 @@ export function startMeeting(userId = meetingState.currentUserId): string | null
     return check.reason!;
   m.status = MeetingStatusMap.IN_PROGRESS;
   m.startedAt = Date.now();
-  const item = m.agenda.find(a => a.id === m.currentAgendaId);
-  if (item && item.status === AgendaItemStatusMap.PENDING)
-    item.status = AgendaItemStatusMap.DISCUSSING;
   log(`@${userName(userId)} 宣布会议开始`, { kind: 'meeting', actor: userId, icon: 'i-lucide-play', tone: 'success' });
   return null;
 }
@@ -234,27 +232,10 @@ export function grabFloor(userId = meetingState.currentUserId): string | null {
   const check = canGrabFloor(m, userId);
   if (!check.ok)
     return check.reason!;
-  if (!m.floor.includes(userId))
-    m.floor.push(userId);
-  if (!m.floorHolder) {
-    // 发言权空闲：先到先得
-    const winner = m.floor[0]!;
-    m.floor = [];
-    m.floorHolder = winner;
-    log(`@${userName(winner)} 抢到发言权`, { kind: 'floor', actor: winner, icon: 'i-lucide-mic', tone: 'success' });
-  } else {
-    log(`@${userName(userId)} 加入发言权抢夺`, { kind: 'floor', actor: userId, icon: 'i-lucide-hand' });
-  }
-  return null;
-}
-
-export function cancelGrab(userId = meetingState.currentUserId): string | null {
-  const m = meetingState.meeting;
-  const index = m.floor.indexOf(userId);
-  if (index < 0)
-    return '你不在抢夺池中';
-  m.floor.splice(index, 1);
-  log(`@${userName(userId)} 取消抢夺发言权`, { kind: 'floor', actor: userId, icon: 'i-lucide-hand' });
+  m.floorHolder = userId;
+  m.floorGrabAt = null;
+  m.floor = [];
+  log(`@${userName(userId)} 抢到发言权`, { kind: 'floor', actor: userId, icon: 'i-lucide-mic', tone: 'success' });
   return null;
 }
 
@@ -267,19 +248,16 @@ export function endFloor(userId = meetingState.currentUserId): string | null {
   return null;
 }
 
-/** 释放发言权并移交抢夺池第一人，随后清空抢夺池（重新开抢）。 */
+/** 释放发言权，开启 3 秒倒计时后允许抢夺。 */
 function releaseFloor(): void {
   const m = meetingState.meeting;
   const holder = m.floorHolder;
   if (holder)
     log(`@${userName(holder)} 结束发言`, { kind: 'floor', actor: holder, icon: 'i-lucide-mic-off' });
   m.floorHolder = null;
-  if (m.floor.length) {
-    const next = m.floor[0]!;
-    m.floor = [];
-    m.floorHolder = next;
-    log(`@${userName(next)} 获得发言权（抢夺池已清空，重新开抢）`, { kind: 'floor', actor: next, icon: 'i-lucide-mic', tone: 'success' });
-  }
+  m.floor = [];
+  m.floorGrabAt = Date.now() + 3000;
+  log('发言权将在 3 秒后开放抢夺', { kind: 'floor', icon: 'i-lucide-timer' });
 }
 
 export function assignFloor(targetId: string, userId = meetingState.currentUserId): string | null {
@@ -290,6 +268,7 @@ export function assignFloor(targetId: string, userId = meetingState.currentUserI
   if (!isMember(m, targetId))
     return '只能分配给会议成员';
   m.floor = [];
+  m.floorGrabAt = null;
   m.floorHolder = targetId;
   log(`主持将发言权分配给 @${userName(targetId)}`, { kind: 'floor', actor: targetId, icon: 'i-lucide-mic', tone: 'success' });
   return null;
@@ -370,9 +349,9 @@ export function secondMotion(motionId: number, userId = meetingState.currentUser
     return check.reason!;
   motion.seconders.push(userId);
   log(`@${userName(userId)} 附议了动议 #M${motionId}`, { kind: 'second', actor: userId, icon: 'i-lucide-thumbs-up' });
-  if (motion.seconders.length >= m.secondsRequired) {
+  if (motion.seconders.length >= 1) {
     motion.status = MotionStatusMap.PENDING;
-    log(`动议 #M${motionId} 已获 ${motion.seconders.length} 人附议，进入辩论阶段`, { kind: 'motion', icon: 'i-lucide-message-square', tone: 'success' });
+    log(`动议 #M${motionId} 已获附议，进入辩论阶段`, { kind: 'motion', icon: 'i-lucide-message-square', tone: 'success' });
   }
   return null;
 }
@@ -411,8 +390,6 @@ export function castBallot(ballot: Ballot, userId = meetingState.currentUserId):
   if (!check.ok)
     return check.reason!;
   m.activeVote!.ballots[userId] = ballot;
-  const label = ballot === BallotMap.YEA ? '赞成' : ballot === BallotMap.NAY ? '反对' : '弃权';
-  log(`@${userName(userId)} 投票：${label}`, { kind: 'ballot', actor: userId, icon: 'i-lucide-check' });
   if (Object.keys(m.activeVote!.ballots).length >= m.members.length) {
     closeVote();
   }
@@ -487,14 +464,6 @@ function applyMotionEffects(motion: Motion, passed: boolean): void {
     return;
   }
   switch (motion.type) {
-    case MotionTypeMap.MAIN: {
-      const item = m.agenda.find(a => a.id === m.currentAgendaId);
-      if (item) {
-        item.status = AgendaItemStatusMap.PASSED;
-        log(`议题「${item.title}」表决通过`, { kind: 'agenda', icon: 'i-lucide-flag', tone: 'success' });
-      }
-      break;
-    }
     case MotionTypeMap.LAY_ON_TABLE:
       if (target) {
         target.status = MotionStatusMap.LAID_ASIDE;
@@ -557,8 +526,6 @@ export function switchAgenda(itemId: number, userId = meetingState.currentUserId
   if (!item)
     return '议题不存在';
   m.currentAgendaId = itemId;
-  if (item.status === AgendaItemStatusMap.PENDING)
-    item.status = AgendaItemStatusMap.DISCUSSING;
   log(`会议切换到议题「${item.title}」`, { kind: 'agenda', actor: userId, icon: 'i-lucide-list-video' });
   return null;
 }
@@ -572,9 +539,49 @@ export function addAgendaItem(title: string, details: string, userId = meetingSt
     title: title.trim(),
     details: details.trim(),
     status: AgendaItemStatusMap.PENDING,
+    scheduledAt: null,
+    isSpecial: false,
   };
   m.agenda.push(item);
   log(`主持新增议题「${item.title}」`, { kind: 'agenda', actor: userId, icon: 'i-lucide-list-plus' });
+  return null;
+}
+
+export function updateAgendaItem(itemId: number, patch: { title?: string, details?: string, scheduledAt?: number | null, isSpecial?: boolean, status?: AgendaItemStatus }, userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  if (!m.recordMode && !isChair(m, userId))
+    return '仅主持可管理议程';
+  const item = m.agenda.find(a => a.id === itemId);
+  if (!item)
+    return '议题不存在';
+  if (patch.title?.trim())
+    item.title = patch.title.trim();
+  if (patch.details !== undefined)
+    item.details = patch.details.trim();
+  if (patch.scheduledAt !== undefined)
+    item.scheduledAt = patch.scheduledAt;
+  if (patch.isSpecial !== undefined)
+    item.isSpecial = patch.isSpecial;
+  if (patch.status !== undefined)
+    item.status = patch.status;
+  log(`主持编辑议题「${item.title}」`, { kind: 'agenda', actor: userId, icon: 'i-lucide-pencil' });
+  return null;
+}
+
+export function moveAgendaItem(itemId: number, direction: 'up' | 'down', userId = meetingState.currentUserId): string | null {
+  const m = meetingState.meeting;
+  if (!m.recordMode && !isChair(m, userId))
+    return '仅主持可管理议程';
+  const index = m.agenda.findIndex(a => a.id === itemId);
+  if (index < 0)
+    return '议题不存在';
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= m.agenda.length)
+    return direction === 'up' ? '已在顶部' : '已在底部';
+  const temp = m.agenda[index]!;
+  m.agenda[index] = m.agenda[target]!;
+  m.agenda[target] = temp;
+  log(`主持调整议题「${temp.title}」顺序`, { kind: 'agenda', actor: userId, icon: 'i-lucide-arrow-up-down' });
   return null;
 }
 
@@ -606,14 +613,12 @@ export function transferChair(targetId: string, userId = meetingState.currentUse
   return null;
 }
 
-export function updateSettings(patch: { title?: string, secondsRequired?: number, voteDuration?: number }, userId = meetingState.currentUserId): string | null {
+export function updateSettings(patch: { title?: string, voteDuration?: number }, userId = meetingState.currentUserId): string | null {
   const m = meetingState.meeting;
   if (!m.recordMode && !isChair(m, userId))
     return '仅主持可修改会议设置';
   if (patch.title?.trim())
     m.profile.title = patch.title.trim();
-  if (patch.secondsRequired)
-    m.secondsRequired = patch.secondsRequired;
   if (patch.voteDuration)
     m.voteDuration = patch.voteDuration;
   log('会议设置已更新', { kind: 'meeting', actor: userId, icon: 'i-lucide-settings' });
